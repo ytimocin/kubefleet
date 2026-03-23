@@ -1,0 +1,25 @@
+# Negative case: placement.name points to a non-existent CRP. The override
+# is accepted by the API, but silently does nothing — no resource is
+# mutated and no override snapshot is listed on any CRP's status.
+# Apply with: envsubst < 11-cro-wrong-placement-ref-negative.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ClusterResourceOverride
+metadata:
+  name: cro-wrong-ref-${USER_TAG}
+spec:
+  placement:
+    name: non-existent-crp-${USER_TAG}
+  clusterResourceSelectors:
+    - group: ""
+      kind: Namespace
+      version: v1
+      name: test-ns-${USER_TAG}
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"should-not-appear": "true"}

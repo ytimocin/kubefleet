@@ -1,0 +1,24 @@
+# Negative case: targets a forbidden JSON patch path (/metadata/name is
+# immutable). Expected outcome: the validating webhook rejects this on
+# apply with an error about disallowed paths.
+# Apply with: envsubst < 15-cro-invalid-path-negative.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ClusterResourceOverride
+metadata:
+  name: cro-invalid-path-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  clusterResourceSelectors:
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      version: v1
+      name: secret-reader-${USER_TAG}
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: replace
+            path: /metadata/name
+            value: "renamed"

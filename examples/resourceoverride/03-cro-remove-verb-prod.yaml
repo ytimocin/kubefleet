@@ -1,0 +1,26 @@
+# Cluster-scope patch targeting env=prod only: removes the third verb
+# ("list") from your secret-reader-${USER_TAG} ClusterRole. Staging clusters
+# keep the original three verbs.
+# Apply with: envsubst < 03-cro-remove-verb-prod.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ClusterResourceOverride
+metadata:
+  name: cro-prod-restrict-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  clusterResourceSelectors:
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      version: v1
+      name: secret-reader-${USER_TAG}
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: prod
+        jsonPatchOverrides:
+          - op: remove
+            path: /rules/0/verbs/2

@@ -1,0 +1,34 @@
+# overrideType: Delete — annotates the user's test-ns-${USER_TAG} namespace
+# on env=prod clusters and removes it entirely from tier=backend clusters
+# (member-2 in the setup). Useful for "deploy everywhere except here".
+# Apply with: envsubst < 10-cro-delete-type.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ClusterResourceOverride
+metadata:
+  name: cro-delete-backend-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  clusterResourceSelectors:
+    - group: ""
+      kind: Namespace
+      version: v1
+      name: test-ns-${USER_TAG}
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: prod
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"managed-by": "fleet"}
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  tier: backend
+        overrideType: Delete

@@ -1,0 +1,31 @@
+# Multiple clusterSelectorTerms inside one rule = OR logic. Matches
+# env=staging OR tier=backend (both resolve to member-2 in this setup).
+# Replace one term with a label only some clusters have to see OR branching.
+# Apply with: envsubst < 14-ro-or-selector.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-or-selector-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: staging
+            - labelSelector:
+                matchLabels:
+                  tier: backend
+        jsonPatchOverrides:
+          - op: replace
+            path: /spec/replicas
+            value: 1

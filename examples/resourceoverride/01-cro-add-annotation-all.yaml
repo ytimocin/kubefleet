@@ -1,0 +1,24 @@
+# Basic CRO: adds an annotation to the user's `secret-reader-${USER_TAG}`
+# ClusterRole on every member cluster (empty clusterSelectorTerms matches all).
+# Apply with: envsubst < 01-cro-add-annotation-all.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ClusterResourceOverride
+metadata:
+  name: example-cro-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  clusterResourceSelectors:
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      version: v1
+      name: secret-reader-${USER_TAG}
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"environment": "fleet-managed"}

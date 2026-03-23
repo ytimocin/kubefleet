@@ -1,0 +1,30 @@
+# Multiple JSON patches inside a single rule: on env=prod clusters, bump both
+# the nginx image tag and replica count in one override pass.
+# Apply with: envsubst < 05-ro-multi-patch.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-multi-patch-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: prod
+        jsonPatchOverrides:
+          - op: replace
+            path: /spec/template/spec/containers/0/image
+            value: "nginx:1.27.3"
+          - op: replace
+            path: /spec/replicas
+            value: 5

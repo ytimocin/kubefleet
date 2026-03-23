@@ -1,0 +1,28 @@
+# RO targeting a namespaced RP (not a cluster-scope CRP). scope: Namespaced
+# tells the RO to resolve placement.name as a ResourcePlacement inside this
+# namespace. Applies the annotation wherever example-rp-${USER_TAG} places
+# my-config.
+# Apply with: envsubst < 12-ro-with-rp-namespaced.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-with-rp-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-rp-${USER_TAG}
+    scope: Namespaced
+  resourceSelectors:
+    - group: ""
+      kind: ConfigMap
+      version: v1
+      name: my-config
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"managed": "true"}

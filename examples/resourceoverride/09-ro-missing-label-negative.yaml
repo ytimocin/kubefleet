@@ -1,0 +1,26 @@
+# Negative case: references a label key that no member cluster has.
+# Expected outcome: per-cluster Overridden condition is False with reason
+# OverriddenFailed; the underlying resource is not modified.
+# Apply with: envsubst < 09-ro-missing-label-negative.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-missing-label-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"bogus": "${MEMBER-CLUSTER-LABEL-KEY-non-existent-label}"}

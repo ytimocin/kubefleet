@@ -1,0 +1,25 @@
+# Basic RO: adds an annotation to the nginx Deployment in your test-ns on
+# every member cluster. Empty clusterSelectorTerms matches all.
+# Apply with: envsubst < 02-ro-add-annotation-all.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: example-ro-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"environment": "fleet-managed"}

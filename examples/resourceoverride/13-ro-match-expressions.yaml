@@ -1,0 +1,31 @@
+# Advanced selector: matchExpressions with operator In. Targets clusters
+# whose `env` label is either prod OR staging (i.e., all three in this
+# setup). Swap operator/values to try NotIn, Exists, DoesNotExist.
+# Apply with: envsubst < 13-ro-match-expressions.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-match-expr-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchExpressions:
+                  - key: env
+                    operator: In
+                    values: ["prod", "staging"]
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"fleet-managed": "true"}

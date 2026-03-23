@@ -1,0 +1,27 @@
+# Reserved variable demo: pulls the `fleet.azure.com/location` label value
+# off each member cluster and injects it into a Deployment annotation.
+# envsubst leaves ${MEMBER-CLUSTER-LABEL-KEY-...} alone because dashes
+# aren't valid shell variable chars — only ${USER_TAG} is substituted.
+# Apply with: envsubst < 08-ro-member-cluster-label.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-cluster-label-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"region": "${MEMBER-CLUSTER-LABEL-KEY-fleet.azure.com/location}"}

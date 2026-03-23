@@ -1,0 +1,36 @@
+# Two override rules in one RO: env=prod gets a pinned image tag,
+# env=staging gets `latest`. Clusters matching neither would be untouched.
+# Apply with: envsubst < 06-ro-per-env.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-per-env-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: prod
+        jsonPatchOverrides:
+          - op: replace
+            path: /spec/template/spec/containers/0/image
+            value: "nginx:1.27.3"
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: staging
+        jsonPatchOverrides:
+          - op: replace
+            path: /spec/template/spec/containers/0/image
+            value: "nginx:latest"

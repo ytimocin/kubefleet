@@ -1,0 +1,26 @@
+# Reserved variable demo: injects ${MEMBER-CLUSTER-NAME} into a Service
+# annotation. Each member ends up with a unique value
+# (e.g. fleet-member-southcentralus-1, fleet-member-southcentralus-2, ...).
+# Apply with: envsubst < 07-ro-member-cluster-name.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-cluster-name-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: ""
+      kind: Service
+      version: v1
+      name: my-service
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms: []
+        jsonPatchOverrides:
+          - op: add
+            path: /metadata/annotations
+            value:
+              {"service.beta.kubernetes.io/azure-dns-label-name": "fleet-${MEMBER-CLUSTER-NAME}"}

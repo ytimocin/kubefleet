@@ -1,0 +1,27 @@
+# Namespace-scope patch targeting env=prod only: replaces the nginx image
+# with a newer tag on prod clusters. Staging keeps the original nginx:1.27.0.
+# Apply with: envsubst < 04-ro-replace-image-prod.yaml | kubectl apply -f -
+apiVersion: placement.kubernetes-fleet.io/v1
+kind: ResourceOverride
+metadata:
+  name: ro-prod-image-${USER_TAG}
+  namespace: test-ns-${USER_TAG}
+spec:
+  placement:
+    name: example-crp-${USER_TAG}
+  resourceSelectors:
+    - group: apps
+      kind: Deployment
+      version: v1
+      name: nginx
+  policy:
+    overrideRules:
+      - clusterSelector:
+          clusterSelectorTerms:
+            - labelSelector:
+                matchLabels:
+                  env: prod
+        jsonPatchOverrides:
+          - op: replace
+            path: /spec/template/spec/containers/0/image
+            value: "nginx:1.27.3"

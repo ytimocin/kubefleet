@@ -80,7 +80,8 @@ type PlacementSpec struct {
 
 	// Policy defines how to select member clusters to place the selected resources.
 	// If unspecified, all the joined member clusters are selected.
-	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="!(self.placementType != oldSelf.placementType)",message="placement type is immutable"
 	Policy *PlacementPolicy `json:"policy,omitempty"`
 
 	// The rollout strategy to use to replace existing placement with new ones.
@@ -926,8 +927,7 @@ type EnvelopeIdentifier struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Type of the envelope object.
-	// +kubebuilder:validation:Enum=ConfigMap;ClusterResourceEnvelope;ResourceEnvelope
-	// +kubebuilder:default=ConfigMap
+	// +kubebuilder:validation:Enum=ClusterResourceEnvelope;ResourceEnvelope
 	// +optional
 	Type EnvelopeType `json:"type"`
 }
@@ -937,9 +937,6 @@ type EnvelopeIdentifier struct {
 type EnvelopeType string
 
 const (
-	// ConfigMapEnvelopeType means the envelope object is of type `ConfigMap`.
-	ConfigMapEnvelopeType EnvelopeType = "ConfigMap"
-
 	// ClusterResourceEnvelopeType is the envelope type that represents the ClusterResourceEnvelope custom resource.
 	ClusterResourceEnvelopeType EnvelopeType = "ClusterResourceEnvelope"
 
@@ -1278,68 +1275,6 @@ const (
 	// - "False" means some of them are not available yet.
 	// - "Unknown" means we haven't finished the apply yet so that we cannot check the resource availability.
 	ResourcesAvailableConditionType ResourcePlacementConditionType = "Available"
-
-	// ResourcePlacementScheduledConditionType indicates whether we have successfully scheduled the ResourcePlacement.
-	// Its condition status can be one of the following:
-	// - "True" means we have successfully scheduled the resources to fully satisfy the placement requirement.
-	// - "False" means we didn't fully satisfy the placement requirement. We will fill the Reason field.
-	// - "Unknown" means we don't have a scheduling decision yet.
-	ResourcePlacementScheduledConditionType ResourcePlacementConditionType = "ResourcePlacementScheduled"
-
-	// ResourcePlacementRolloutStartedConditionType indicates whether the selected resources start rolling out or not.
-	// Its condition status can be one of the following:
-	// - "True" means the selected resources successfully start rolling out in all scheduled clusters.
-	// - "False" means the selected resources have not been rolled out in all scheduled clusters yet.
-	// - "Unknown" means we don't have a rollout decision yet.
-	ResourcePlacementRolloutStartedConditionType ResourcePlacementConditionType = "ResourcePlacementRolloutStarted"
-
-	// ResourcePlacementOverriddenConditionType indicates whether all the selected resources have been overridden
-	// successfully before applying to the target cluster.
-	// Its condition status can be one of the following:
-	// - "True" means all the selected resources are successfully overridden before applying to the target cluster or
-	// override is not needed if there is no override defined with the reason of NoOverrideSpecified.
-	// - "False" means some of them have failed.
-	// - "Unknown" means we haven't finished the override yet.
-	ResourcePlacementOverriddenConditionType ResourcePlacementConditionType = "ResourcePlacementOverridden"
-
-	// ResourcePlacementWorkSynchronizedConditionType indicates whether the selected resources are created or updated
-	// under the per-cluster namespaces (i.e., fleet-member-<member-name>) on the hub cluster.
-	// Its condition status can be one of the following:
-	// - "True" means all the selected resources are successfully created or updated under the per-cluster namespaces
-	// (i.e., fleet-member-<member-name>) on the hub cluster.
-	// - "False" means all the selected resources have not been created or updated under the per-cluster namespaces
-	// (i.e., fleet-member-<member-name>) on the hub cluster yet.
-	// - "Unknown" means we haven't started processing the work yet.
-	ResourcePlacementWorkSynchronizedConditionType ResourcePlacementConditionType = "ResourcePlacementWorkSynchronized"
-
-	// ResourcePlacementAppliedConditionType indicates whether all the selected member clusters have applied
-	// the selected resources locally.
-	// Its condition status can be one of the following:
-	// - "True" means all the selected resources are successfully applied to all the target clusters or apply is not needed
-	// if there are no cluster(s) selected by the scheduler.
-	// - "False" means some of them have failed. We will place some of the detailed failure in the FailedResourcePlacement array.
-	// - "Unknown" means we haven't finished the apply yet.
-	ResourcePlacementAppliedConditionType ResourcePlacementConditionType = "ResourcePlacementApplied"
-
-	// ResourcePlacementAvailableConditionType indicates whether the selected resources are available on all the
-	// selected member clusters.
-	// Its condition status can be one of the following:
-	// - "True" means all the selected resources are available on all the selected member clusters.
-	// - "False" means some of them are not available yet. We will place some of the detailed failure in the FailedResourcePlacement
-	// array.
-	// - "Unknown" means we haven't finished the apply yet so that we cannot check the resource availability.
-	ResourcePlacementAvailableConditionType ResourcePlacementConditionType = "ResourcePlacementAvailable"
-
-	// ResourcePlacementDiffReportedConditionType indicates whether Fleet has reported
-	// configuration differences between the desired states of resources as kept in the hub cluster
-	// and the current states on the all member clusters.
-	//
-	// It can have the following condition statuses:
-	// * True: Fleet has reported complete sets of configuration differences on all member clusters.
-	// * False: Fleet has not yet reported complete sets of configuration differences on some member
-	//   clusters, or an error has occurred.
-	// * Unknown: Fleet has not finished processing the diff reporting yet.
-	ResourcePlacementDiffReportedConditionType ResourcePlacementConditionType = "ResourcePlacementDiffReported"
 )
 
 // PerClusterPlacementConditionType defines a specific condition of a per cluster placement.

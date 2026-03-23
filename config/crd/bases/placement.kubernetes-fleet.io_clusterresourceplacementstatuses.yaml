@@ -280,10 +280,8 @@ spec:
                                   scoped.
                                 type: string
                               type:
-                                default: ConfigMap
                                 description: Type of the envelope object.
                                 enum:
-                                - ConfigMap
                                 - ClusterResourceEnvelope
                                 - ResourceEnvelope
                                 type: string
@@ -397,10 +395,8 @@ spec:
                                   scoped.
                                 type: string
                               type:
-                                default: ConfigMap
                                 description: Type of the envelope object.
                                 enum:
-                                - ConfigMap
                                 - ClusterResourceEnvelope
                                 - ResourceEnvelope
                                 type: string
@@ -566,10 +562,8 @@ spec:
                                   scoped.
                                 type: string
                               type:
-                                default: ConfigMap
                                 description: Type of the envelope object.
                                 enum:
-                                - ConfigMap
                                 - ClusterResourceEnvelope
                                 - ResourceEnvelope
                                 type: string
@@ -627,10 +621,8 @@ spec:
                             object. Empty if the envelope object is cluster scoped.
                           type: string
                         type:
-                          default: ConfigMap
                           description: Type of the envelope object.
                           enum:
-                          - ConfigMap
                           - ClusterResourceEnvelope
                           - ResourceEnvelope
                           type: string
@@ -660,9 +652,6 @@ spec:
                   type: object
                 type: array
             type: object
-        required:
-        - lastUpdatedTime
-        - sourceStatus
         type: object
     served: true
     storage: false

@@ -518,6 +518,9 @@ spec:
                       type: object
                     type: array
                 type: object
+                x-kubernetes-validations:
+                - message: placement type is immutable
+                  rule: '!(self.placementType != oldSelf.placementType)'
               resourceSelectors:
                 description: |-
                   ResourceSelectors is an array of selectors used to select cluster scoped resources. The selectors are `ORed`.
@@ -1141,10 +1144,8 @@ spec:
                                   scoped.
                                 type: string
                               type:
-                                default: ConfigMap
                                 description: Type of the envelope object.
                                 enum:
-                                - ConfigMap
                                 - ClusterResourceEnvelope
                                 - ResourceEnvelope
                                 type: string
@@ -1258,10 +1259,8 @@ spec:
                                   scoped.
                                 type: string
                               type:
-                                default: ConfigMap
                                 description: Type of the envelope object.
                                 enum:
-                                - ConfigMap
                                 - ClusterResourceEnvelope
                                 - ResourceEnvelope
                                 type: string
@@ -1427,10 +1426,8 @@ spec:
                                   scoped.
                                 type: string
                               type:
-                                default: ConfigMap
                                 description: Type of the envelope object.
                                 enum:
-                                - ConfigMap
                                 - ClusterResourceEnvelope
                                 - ResourceEnvelope
                                 type: string
@@ -1488,10 +1485,8 @@ spec:
                             object. Empty if the envelope object is cluster scoped.
                           type: string
                         type:
-                          default: ConfigMap
                           description: Type of the envelope object.
                           enum:
-                          - ConfigMap
                           - ClusterResourceEnvelope
                           - ResourceEnvelope
                           type: string

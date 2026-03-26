@@ -61,8 +61,8 @@ spec:
             type: string
           lastUpdatedTime:
             description: |-
-              LastUpdatedTime is the timestamp when this object was last updated.
-              This field is set to the current time whenever the object is created or modified.
+              LastUpdatedTime is the timestamp when this CRPS object was last updated.
+              This field is set to the current time whenever the CRPS object is created or modified.
             format: date-time
             type: string
           metadata:
@@ -71,8 +71,11 @@ spec:
             description: Source status copied from the corresponding ClusterResourcePlacement.
             properties:
               conditions:
-                description: Conditions is an array of current observed conditions
-                  for ClusterResourcePlacement.
+                description: |-
+                  Conditions is an array of current observed conditions for ClusterResourcePlacement.
+                  All conditions except `ClusterResourcePlacementScheduled` correspond to the resource snapshot at the index specified by `ObservedResourceIndex`.
+                  For example, a condition of `ClusterResourcePlacementWorkSynchronized` type
+                  is observing the synchronization status of the resource snapshot with index `ObservedResourceIndex`.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -192,8 +195,10 @@ spec:
                         If it is not empty, its value should be unique cross all placement decisions for the Placement.
                       type: string
                     conditions:
-                      description: Conditions is an array of current observed conditions
-                        for PerClusterPlacementStatus.
+                      description: |-
+                        Conditions is an array of current observed conditions on the cluster.
+                        Each condition corresponds to the resource snapshot at the index specified by `ObservedResourceIndex`.
+                        For example, the condition of type `RolloutStarted` is observing the rollout status of the resource snapshot with index `ObservedResourceIndex`.
                       items:
                         description: Condition contains details for one aspect of
                           the current state of this API Resource.
@@ -652,6 +657,9 @@ spec:
                   type: object
                 type: array
             type: object
+        required:
+        - lastUpdatedTime
+        - sourceStatus
         type: object
     served: true
     storage: false

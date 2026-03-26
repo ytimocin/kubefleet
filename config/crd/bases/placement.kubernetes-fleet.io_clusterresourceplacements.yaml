@@ -546,8 +546,32 @@ spec:
                       type: string
                     kind:
                       description: |-
-                        Kind of the cluster-scoped resource.
-                        Note: When `Kind` is `namespace`, ALL the resources under the selected namespaces are selected.
+                        Kind of the to be selected resource.
+
+                        Special behavior when Kind is `namespace` (ClusterResourcePlacement only):
+                        Note: ResourcePlacement cannot select namespaces since it is namespace-scoped and selects resources within a namespace.
+
+                        For ClusterResourcePlacement, you can use SelectionScope to control what gets selected:
+                        - NamespaceOnly: Only the namespace object itself
+                        - NamespaceWithResources: The namespace AND all resources within it (default)
+                        - NamespaceWithResourceSelectors: The namespace AND resources specified by additional selectors
+
+                        When SelectionScope is NamespaceWithResourceSelectors, you can define additional ResourceSelectorTerms
+                        (after the namespace selector) to specify which resources to include. These additional selectors can
+                        target both namespace-scoped resources (within the selected namespace) and cluster-scoped resources.
+
+                        Important requirements for NamespaceWithResourceSelectors mode:
+                        - Exactly one namespace selector with this mode is allowed
+                        - The namespace selector must select by name (not by label)
+                        - Only one namespace selector is allowed when using this mode (cannot mix with other namespace selectors)
+                        - All requirements are validated via CEL at API validation time
+                        - If the selected namespace is deleted after CRP creation, the controller will report an error condition
+
+                        Example using NamespaceWithResourceSelectors:
+                        - Namespace selector: {Group: "", Version: "v1", Kind: "Namespace", Name: "prod", SelectionScope: "NamespaceWithResourceSelectors"}
+                        - Additional selector: {Group: "apps", Version: "v1", Kind: "Deployment", LabelSelector: {app: "frontend"}}
+                        - Third selector: {Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole", Name: "admin"}
+                        This selects: the "prod" namespace, all Deployments with label app=frontend in "prod", and the "admin" ClusterRole.
                       type: string
                     labelSelector:
                       description: |-
@@ -622,7 +646,7 @@ spec:
               revisionHistoryLimit:
                 default: 10
                 description: |-
-                  The number of old ClusterSchedulingPolicySnapshot or ClusterResourceSnapshot resources to retain to allow rollback.
+                  The number of old SchedulingPolicySnapshot or ResourceSnapshot resources to retain to allow rollback.
                   This is a pointer to distinguish between explicit zero and not specified.
                   Defaults to 10.
                 format: int32
@@ -935,6 +959,10 @@ spec:
                     - RollingUpdate
                     - External
                     type: string
+                    x-kubernetes-validations:
+                    - message: cannot change rollout strategy type from 'External'
+                        to other types
+                      rule: '!(self != ''External'' && oldSelf == ''External'')'
                 type: object
             required:
             - resourceSelectors
@@ -942,23 +970,22 @@ spec:
             x-kubernetes-validations:
             - message: policy cannot be removed once set
               rule: '!(has(oldSelf.policy) && !has(self.policy))'
+            - message: when statusReportingScope is NamespaceAccessible, exactly one
+                resourceSelector with kind 'Namespace' is required
+              rule: '!(self.statusReportingScope == ''NamespaceAccessible'' && size(self.resourceSelectors.filter(x,
+                x.kind == ''Namespace'')) != 1)'
             - message: statusReportingScope is immutable
               rule: '!has(oldSelf.statusReportingScope) || self.statusReportingScope
                 == oldSelf.statusReportingScope'
-            - message: placement type is immutable
-              rule: '!has(oldSelf.policy) || !has(self.policy) || self.policy.placementType
-                == oldSelf.policy.placementType'
-            - message: exactly one namespace resourceSelector is required when statusReportingScope
-                is NamespaceAccessible
-              rule: '!has(self.statusReportingScope) || self.statusReportingScope
-                != ''NamespaceAccessible'' || size(self.resourceSelectors.filter(x,
-                x.kind == ''Namespace'')) == 1'
           status:
             description: The observed status of ClusterResourcePlacement.
             properties:
               conditions:
-                description: Conditions is an array of current observed conditions
-                  for ClusterResourcePlacement.
+                description: |-
+                  Conditions is an array of current observed conditions for ClusterResourcePlacement.
+                  All conditions except `ClusterResourcePlacementScheduled` correspond to the resource snapshot at the index specified by `ObservedResourceIndex`.
+                  For example, a condition of `ClusterResourcePlacementWorkSynchronized` type
+                  is observing the synchronization status of the resource snapshot with index `ObservedResourceIndex`.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -1078,8 +1105,10 @@ spec:
                         If it is not empty, its value should be unique cross all placement decisions for the Placement.
                       type: string
                     conditions:
-                      description: Conditions is an array of current observed conditions
-                        for PerClusterPlacementStatus.
+                      description: |-
+                        Conditions is an array of current observed conditions on the cluster.
+                        Each condition corresponds to the resource snapshot at the index specified by `ObservedResourceIndex`.
+                        For example, the condition of type `RolloutStarted` is observing the rollout status of the resource snapshot with index `ObservedResourceIndex`.
                       items:
                         description: Condition contains details for one aspect of
                           the current state of this API Resource.

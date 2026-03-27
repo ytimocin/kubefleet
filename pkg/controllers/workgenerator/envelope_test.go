@@ -17,11 +17,9 @@ limitations under the License.
 package workgenerator
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -31,7 +29,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	fleetv1beta1 "github.com/kubefleet-dev/kubefleet/apis/placement/v1beta1"
 	"github.com/kubefleet-dev/kubefleet/pkg/utils"
@@ -486,48 +483,16 @@ func TestCreateOrUpdateEnvelopeCRWorkObj(t *testing.T) {
 			wantErr:                             true,
 		},
 		{
-			name:                                "two existing works should self-heal by removing duplicates",
+			name:                                "two existing works should result in error",
 			envelopeReader:                      resourceEnvelope,
 			resourceOverrideSnapshotHash:        "new-resource-hash",
 			clusterResourceOverrideSnapshotHash: "new-cluster-resource-hash",
 			existingObjects: func() []client.Object {
-				olderWork := existingWork.DeepCopy()
-				olderWork.CreationTimestamp = metav1.NewTime(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
-				newerWork := existingWork.DeepCopy()
-				newerWork.Name = "test-work-dup"
-				newerWork.CreationTimestamp = metav1.NewTime(time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC))
-				return []client.Object{olderWork, newerWork}
+				existingWork1 := existingWork.DeepCopy()
+				existingWork1.Name = "test-work-1"
+				return []client.Object{existingWork, existingWork1}
 			}(),
-			want: &fleetv1beta1.Work{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "fleet-member-test-cluster-1",
-					Labels: map[string]string{
-						fleetv1beta1.ParentBindingLabel:               resourceBinding.Name,
-						fleetv1beta1.PlacementTrackingLabel:           resourceBinding.Labels[fleetv1beta1.PlacementTrackingLabel],
-						fleetv1beta1.ParentResourceSnapshotIndexLabel: resourceSnapshot.Labels[fleetv1beta1.ResourceIndexLabel],
-						fleetv1beta1.EnvelopeTypeLabel:                string(fleetv1beta1.ResourceEnvelopeType),
-						fleetv1beta1.EnvelopeNameLabel:                resourceEnvelope.Name,
-						fleetv1beta1.EnvelopeNamespaceLabel:           resourceEnvelope.Namespace,
-					},
-					Annotations: map[string]string{
-						fleetv1beta1.ParentResourceSnapshotNameAnnotation:                resourceBinding.Spec.ResourceSnapshotName,
-						fleetv1beta1.ParentResourceOverrideSnapshotHashAnnotation:        "new-resource-hash",
-						fleetv1beta1.ParentClusterResourceOverrideSnapshotHashAnnotation: "new-cluster-resource-hash",
-					},
-				},
-				Spec: fleetv1beta1.WorkSpec{
-					Workload: fleetv1beta1.WorkloadTemplate{
-						Manifests: []fleetv1beta1.Manifest{
-							{
-								RawExtension: runtime.RawExtension{
-									Raw: configMapData,
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 
@@ -560,100 +525,6 @@ func TestCreateOrUpdateEnvelopeCRWorkObj(t *testing.T) {
 				t.Errorf("createOrUpdateEnvelopeCRWorkObj() mismatch (-got +want):\n%s", diff)
 			}
 		})
-	}
-}
-
-// TestCreateOrUpdateEnvelopeCRWorkObj_DeleteFailure verifies that the self-healing
-// logic in createOrUpdateEnvelopeCRWorkObj gracefully handles delete failures when
-// cleaning up duplicate work objects. It uses a controller-runtime interceptor to
-// inject a delete error and asserts that the function still returns successfully,
-// since the delete failure is logged but does not block reconciliation.
-func TestCreateOrUpdateEnvelopeCRWorkObj_DeleteFailure(t *testing.T) {
-	scheme := serviceScheme(t)
-
-	configMapData, err := json.Marshal(map[string]any{
-		"apiVersion": "v1",
-		"kind":       "ConfigMap",
-		"metadata":   map[string]any{"name": "test-cm", "namespace": "default"},
-		"data":       map[string]string{"key": "value"},
-	})
-	if err != nil {
-		t.Fatalf("Failed to marshal configmap: %v", err)
-	}
-
-	resourceEnvelope := &fleetv1beta1.ResourceEnvelope{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-envelope",
-			Namespace: "default",
-		},
-		Data: map[string]runtime.RawExtension{
-			"configmap": {Raw: configMapData},
-		},
-	}
-
-	resourceBinding := &fleetv1beta1.ClusterResourceBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-binding",
-			Labels: map[string]string{
-				fleetv1beta1.PlacementTrackingLabel: "test-crp",
-			},
-		},
-		Spec: fleetv1beta1.ResourceBindingSpec{
-			TargetCluster:        "test-cluster-1",
-			ResourceSnapshotName: "test-snapshot",
-		},
-	}
-	resourceSnapshot := &fleetv1beta1.ClusterResourceSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-snapshot",
-			Labels: map[string]string{
-				fleetv1beta1.ResourceIndexLabel: "0",
-			},
-		},
-	}
-
-	existingWork1 := &fleetv1beta1.Work{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              "test-work",
-			Namespace:         "fleet-member-test-cluster-1",
-			CreationTimestamp: metav1.NewTime(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)),
-			Labels: map[string]string{
-				fleetv1beta1.ParentBindingLabel:     resourceBinding.Name,
-				fleetv1beta1.PlacementTrackingLabel: resourceBinding.Labels[fleetv1beta1.PlacementTrackingLabel],
-				fleetv1beta1.EnvelopeTypeLabel:      string(fleetv1beta1.ResourceEnvelopeType),
-				fleetv1beta1.EnvelopeNameLabel:      resourceEnvelope.Name,
-				fleetv1beta1.EnvelopeNamespaceLabel: resourceEnvelope.Namespace,
-			},
-		},
-	}
-	existingWork2 := existingWork1.DeepCopy()
-	existingWork2.Name = "test-work-dup"
-	existingWork2.CreationTimestamp = metav1.NewTime(time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC))
-
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(existingWork1, existingWork2).
-		WithInterceptorFuncs(interceptor.Funcs{
-			Delete: func(_ context.Context, _ client.WithWatch, _ client.Object, _ ...client.DeleteOption) error {
-				return fmt.Errorf("simulated delete failure")
-			},
-		}).
-		Build()
-
-	r := &Reconciler{
-		Client:          fakeClient,
-		recorder:        record.NewFakeRecorder(10),
-		InformerManager: &informer.FakeManager{},
-	}
-
-	// The function should still succeed even when delete fails (it only logs the error).
-	got, err := r.createOrUpdateEnvelopeCRWorkObj(ctx, resourceEnvelope, "test-work",
-		resourceBinding, resourceSnapshot, "resource-hash", "cluster-resource-hash")
-	if err != nil {
-		t.Errorf("createOrUpdateEnvelopeCRWorkObj() error = %v, wantErr false", err)
-	}
-	if got == nil {
-		t.Errorf("createOrUpdateEnvelopeCRWorkObj() returned nil work, want non-nil")
 	}
 }
 

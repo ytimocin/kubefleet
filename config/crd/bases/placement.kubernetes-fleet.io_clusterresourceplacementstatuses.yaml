@@ -76,6 +76,8 @@ spec:
                   All conditions except `ClusterResourcePlacementScheduled` correspond to the resource snapshot at the index specified by `ObservedResourceIndex`.
                   For example, a condition of `ClusterResourcePlacementWorkSynchronized` type
                   is observing the synchronization status of the resource snapshot with index `ObservedResourceIndex`.
+                  If the rollout strategy type is `External`, and `ObservedResourceIndex` is unset due to clusters reporting different resource indices,
+                  conditions except `ClusterResourcePlacementScheduled` will be empty or set to Unknown.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

@@ -541,12 +541,12 @@ spec:
                   properties:
                     group:
                       description: |-
-                        Group name of the cluster-scoped resource.
+                        Group name of the resource to be selected.
                         Use an empty string to select resources under the core API group (e.g., namespaces).
                       type: string
                     kind:
                       description: |-
-                        Kind of the to be selected resource.
+                        Kind of the resource to be selected.
 
                         Special behavior when Kind is `namespace` (ClusterResourcePlacement only):
                         Note: ResourcePlacement cannot select namespaces since it is namespace-scoped and selects resources within a namespace.
@@ -554,28 +554,10 @@ spec:
                         For ClusterResourcePlacement, you can use SelectionScope to control what gets selected:
                         - NamespaceOnly: Only the namespace object itself
                         - NamespaceWithResources: The namespace AND all resources within it (default)
-                        - NamespaceWithResourceSelectors: The namespace AND resources specified by additional selectors
-
-                        When SelectionScope is NamespaceWithResourceSelectors, you can define additional ResourceSelectorTerms
-                        (after the namespace selector) to specify which resources to include. These additional selectors can
-                        target both namespace-scoped resources (within the selected namespace) and cluster-scoped resources.
-
-                        Important requirements for NamespaceWithResourceSelectors mode:
-                        - Exactly one namespace selector with this mode is allowed
-                        - The namespace selector must select by name (not by label)
-                        - Only one namespace selector is allowed when using this mode (cannot mix with other namespace selectors)
-                        - All requirements are validated via CEL at API validation time
-                        - If the selected namespace is deleted after CRP creation, the controller will report an error condition
-
-                        Example using NamespaceWithResourceSelectors:
-                        - Namespace selector: {Group: "", Version: "v1", Kind: "Namespace", Name: "prod", SelectionScope: "NamespaceWithResourceSelectors"}
-                        - Additional selector: {Group: "apps", Version: "v1", Kind: "Deployment", LabelSelector: {app: "frontend"}}
-                        - Third selector: {Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole", Name: "admin"}
-                        This selects: the "prod" namespace, all Deployments with label app=frontend in "prod", and the "admin" ClusterRole.
                       type: string
                     labelSelector:
                       description: |-
-                        A label query over all the cluster-scoped resources. Resources matching the query are selected.
+                        A label query over all the resources to be selected. Resources matching the query are selected.
                         Note that namespace-scoped resources can't be selected even if they match the query.
                       properties:
                         matchExpressions:
@@ -622,18 +604,20 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     name:
-                      description: Name of the cluster-scoped resource.
+                      description: Name of the resource to be selected.
                       type: string
                     selectionScope:
                       default: NamespaceWithResources
-                      description: SelectionScope defines the scope of resource selections
-                        when the Kind is `namespace`.
+                      description: |-
+                        SelectionScope defines the scope of resource selections when the Kind is `namespace`.
+                        This field is only applicable when Kind is "Namespace" and is ignored for other resource kinds.
+                        See the Kind field documentation for detailed examples and usage patterns.
                       enum:
                       - NamespaceOnly
                       - NamespaceWithResources
                       type: string
                     version:
-                      description: Version of the cluster-scoped resource.
+                      description: Version of the resource to be selected.
                       type: string
                   required:
                   - group
@@ -986,6 +970,8 @@ spec:
                   All conditions except `ClusterResourcePlacementScheduled` correspond to the resource snapshot at the index specified by `ObservedResourceIndex`.
                   For example, a condition of `ClusterResourcePlacementWorkSynchronized` type
                   is observing the synchronization status of the resource snapshot with index `ObservedResourceIndex`.
+                  If the rollout strategy type is `External`, and `ObservedResourceIndex` is unset due to clusters reporting different resource indices,
+                  conditions except `ClusterResourcePlacementScheduled` will be empty or set to Unknown.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

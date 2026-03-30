@@ -42,6 +42,7 @@ func getResourceOverrideSpec() placementv1beta1.ResourceOverrideSpec {
 				Group:   "",
 				Version: "v1",
 				Kind:    "Pod",
+				Name:    "test-pod",
 			},
 		},
 		Policy: &placementv1beta1.OverridePolicy{

@@ -40,6 +40,7 @@ func getClusterResourceOverrideSpec() placementv1beta1.ClusterResourceOverrideSp
 				Group:   "",
 				Version: "v1",
 				Kind:    "Namespace",
+				Name:    "test-ns",
 			},
 		},
 		Policy: &placementv1beta1.OverridePolicy{

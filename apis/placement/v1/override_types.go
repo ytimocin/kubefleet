@@ -44,6 +44,9 @@ type ClusterResourceOverride struct {
 // If the resource is selected by both ClusterResourceOverride and ResourceOverride, ResourceOverride will win when resolving
 // conflicts.
 // +kubebuilder:validation:XValidation:rule="(has(oldSelf.placement) && has(self.placement) && oldSelf.placement == self.placement) || (!has(oldSelf.placement) && !has(self.placement))",message="The placement field is immutable"
+// +kubebuilder:validation:XValidation:rule="self.clusterResourceSelectors.all(s, !has(s.labelSelector))",message="labelSelector is not supported for cluster resource override selectors"
+// +kubebuilder:validation:XValidation:rule="self.clusterResourceSelectors.all(s, has(s.name) && s.name.size() > 0)",message="resource name is required for cluster resource override selectors"
+// +kubebuilder:validation:XValidation:rule="self.clusterResourceSelectors.all(x, self.clusterResourceSelectors.exists_one(y, x.group == y.group && x.version == y.version && x.kind == y.kind && ((!has(x.name) && !has(y.name)) || (has(x.name) && has(y.name) && x.name == y.name))))",message="cluster resource override selectors must be unique"
 type ClusterResourceOverrideSpec struct {
 	// Placement defines whether the override is applied to a specific placement or not.
 	// If set, the override will trigger the placement rollout immediately when the rollout strategy type is RollingUpdate.
@@ -111,8 +114,10 @@ type OverridePolicy struct {
 }
 
 // OverrideRule defines how to override the selected resources on the target clusters.
-// +kubebuilder:validation:XValidation:rule="self.overrideType != 'Delete' || !has(self.jsonPatchOverrides) || size(self.jsonPatchOverrides) == 0",message="jsonPatchOverrides must be empty when overrideType is Delete"
+// +kubebuilder:validation:XValidation:rule="self.overrideType != 'Delete' || !has(self.jsonPatchOverrides) || size(self.jsonPatchOverrides) == 0",message="jsonPatchOverrides must not be set when overrideType is Delete"
 // +kubebuilder:validation:XValidation:rule="self.overrideType != 'JSONPatch' || (has(self.jsonPatchOverrides) && size(self.jsonPatchOverrides) > 0)",message="jsonPatchOverrides must not be empty when overrideType is JSONPatch"
+// +kubebuilder:validation:XValidation:rule="!has(self.clusterSelector) || !has(self.clusterSelector.clusterSelectorTerms) || self.clusterSelector.clusterSelectorTerms.all(t, !has(t.propertySelector) && !has(t.propertySorter))",message="only labelSelector is supported for override cluster selectors"
+// +kubebuilder:validation:XValidation:rule="!has(self.clusterSelector) || !has(self.clusterSelector.clusterSelectorTerms) || self.clusterSelector.clusterSelectorTerms.all(t, has(t.labelSelector))",message="labelSelector is required for override cluster selector terms"
 type OverrideRule struct {
 	// ClusterSelectors selects the target clusters.
 	// The resources will be overridden before applying to the matching clusters.
@@ -130,7 +135,6 @@ type OverrideRule struct {
 
 	// JSONPatchOverrides defines a list of JSON patch override rules.
 	// This field is only allowed when OverrideType is JSONPatch.
-	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=20
 	// +optional
 	JSONPatchOverrides []JSONPatchOverride `json:"jsonPatchOverrides,omitempty"`
@@ -169,6 +173,7 @@ type ResourceOverride struct {
 // If the resource is selected by both ClusterResourceOverride and ResourceOverride, ResourceOverride will win when resolving
 // conflicts.
 // +kubebuilder:validation:XValidation:rule="(has(oldSelf.placement) && has(self.placement) && oldSelf.placement == self.placement) || (!has(oldSelf.placement) && !has(self.placement))",message="The placement field is immutable"
+// +kubebuilder:validation:XValidation:rule="self.resourceSelectors.all(x, self.resourceSelectors.exists_one(y, x.group == y.group && x.version == y.version && x.kind == y.kind && x.name == y.name))",message="resource override selectors must be unique"
 type ResourceOverrideSpec struct {
 	// Placement defines whether the override is applied to a specific placement or not.
 	// If set, the override will trigger the placement rollout immediately when the rollout strategy type is RollingUpdate.
@@ -196,18 +201,22 @@ type ResourceOverrideSpec struct {
 type ResourceSelector struct {
 	// Group name of the namespace-scoped resource.
 	// Use an empty string to select resources under the core API group (e.g., services).
+	// +kubebuilder:validation:MaxLength=253
 	// +required
 	Group string `json:"group"`
 
 	// Version of the namespace-scoped resource.
+	// +kubebuilder:validation:MaxLength=63
 	// +required
 	Version string `json:"version"`
 
 	// Kind of the namespace-scoped resource.
+	// +kubebuilder:validation:MaxLength=63
 	// +required
 	Kind string `json:"kind"`
 
 	// Name of the namespace-scoped resource.
+	// +kubebuilder:validation:MaxLength=253
 	// +required
 	Name string `json:"name"`
 }

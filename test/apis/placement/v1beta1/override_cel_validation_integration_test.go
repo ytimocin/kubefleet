@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	placementv1beta1 "github.com/kubefleet-dev/kubefleet/apis/placement/v1beta1"
 )
@@ -90,7 +91,7 @@ var _ = Describe("Test Override CEL validation", func() {
 					},
 				},
 			}
-			expectCELValidationError(hubClient.Create(ctx, &cro), "jsonPatchOverrides must be empty when overrideType is Delete")
+			expectCELValidationError(hubClient.Create(ctx, &cro), "jsonPatchOverrides must not be set when overrideType is Delete")
 		})
 
 		It("should deny OverrideRule with JSONPatch type and empty jsonPatchOverrides", func() {
@@ -235,7 +236,7 @@ var _ = Describe("Test Override CEL validation", func() {
 					},
 				},
 			}
-			expectCELValidationError(hubClient.Create(ctx, &ro), "jsonPatchOverrides must be empty when overrideType is Delete")
+			expectCELValidationError(hubClient.Create(ctx, &ro), "jsonPatchOverrides must not be set when overrideType is Delete")
 		})
 
 		It("should deny RO OverrideRule with JSONPatch type and empty jsonPatchOverrides", func() {
@@ -266,6 +267,138 @@ var _ = Describe("Test Override CEL validation", func() {
 			}
 			Expect(hubClient.Create(ctx, &ro)).Should(Succeed())
 			Expect(hubClient.Delete(ctx, &ro)).Should(Succeed())
+		})
+	})
+
+	Context("ClusterResourceOverride - selector validation", func() {
+		It("should deny CRO with labelSelector on cluster resource selectors", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-ls", GinkgoParallelProcess()),
+				nil,
+			)
+			cro.Spec.ClusterResourceSelectors[0].LabelSelector = &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "test"},
+			}
+			expectCELValidationError(hubClient.Create(ctx, &cro), "labelSelector is not supported for cluster resource override selectors")
+		})
+
+		It("should deny CRO with empty name on cluster resource selectors", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-emptyname", GinkgoParallelProcess()),
+				nil,
+			)
+			cro.Spec.ClusterResourceSelectors[0].Name = ""
+			expectCELValidationError(hubClient.Create(ctx, &cro), "resource name is required for cluster resource override selectors")
+		})
+
+		It("should deny CRO with duplicate cluster resource selectors", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-dup", GinkgoParallelProcess()),
+				nil,
+			)
+			cro.Spec.ClusterResourceSelectors = append(cro.Spec.ClusterResourceSelectors, cro.Spec.ClusterResourceSelectors[0])
+			expectCELValidationError(hubClient.Create(ctx, &cro), "cluster resource override selectors must be unique")
+		})
+	})
+
+	Context("ResourceOverride - selector validation", func() {
+		It("should deny RO with duplicate resource selectors", func() {
+			ro := createValidResourceOverride(
+				testNamespace,
+				fmt.Sprintf(celRORuleNameTemplate+"-dup", GinkgoParallelProcess()),
+				nil,
+			)
+			ro.Spec.ResourceSelectors = append(ro.Spec.ResourceSelectors, ro.Spec.ResourceSelectors[0])
+			expectCELValidationError(hubClient.Create(ctx, &ro), "resource override selectors must be unique")
+		})
+	})
+
+	Context("ClusterResourceOverride - clusterSelector validation", func() {
+		It("should deny OverrideRule with propertySelector in clusterSelector", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-ps", GinkgoParallelProcess()),
+				nil,
+			)
+			cro.Spec.Policy.OverrideRules[0].ClusterSelector = &placementv1beta1.ClusterSelector{
+				ClusterSelectorTerms: []placementv1beta1.ClusterSelectorTerm{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"region": "us"},
+						},
+						PropertySelector: &placementv1beta1.PropertySelector{
+							MatchExpressions: []placementv1beta1.PropertySelectorRequirement{
+								{Name: "cpu", Operator: placementv1beta1.PropertySelectorGreaterThanOrEqualTo, Values: []string{"4"}},
+							},
+						},
+					},
+				},
+			}
+			expectCELValidationError(hubClient.Create(ctx, &cro), "only labelSelector is supported for override cluster selectors")
+		})
+
+		It("should deny OverrideRule with clusterSelector term missing labelSelector", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-nols", GinkgoParallelProcess()),
+				nil,
+			)
+			cro.Spec.Policy.OverrideRules[0].ClusterSelector = &placementv1beta1.ClusterSelector{
+				ClusterSelectorTerms: []placementv1beta1.ClusterSelectorTerm{
+					{},
+				},
+			}
+			expectCELValidationError(hubClient.Create(ctx, &cro), "labelSelector is required for override cluster selector terms")
+		})
+
+		It("should allow OverrideRule with valid clusterSelector", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-validcs", GinkgoParallelProcess()),
+				nil,
+			)
+			cro.Spec.Policy.OverrideRules[0].ClusterSelector = &placementv1beta1.ClusterSelector{
+				ClusterSelectorTerms: []placementv1beta1.ClusterSelectorTerm{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"region": "us"},
+						},
+					},
+				},
+			}
+			Expect(hubClient.Create(ctx, &cro)).Should(Succeed())
+			Expect(hubClient.Delete(ctx, &cro)).Should(Succeed())
+		})
+	})
+
+	Context("ClusterResourceOverride - placement immutability", func() {
+		It("should deny changing placement on update", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-immut", GinkgoParallelProcess()),
+				&placementv1beta1.PlacementRef{
+					Name:  "test-placement",
+					Scope: placementv1beta1.ClusterScoped,
+				},
+			)
+			Expect(hubClient.Create(ctx, &cro)).Should(Succeed())
+
+			cro.Spec.Placement.Name = "changed-placement"
+			expectCELValidationError(hubClient.Update(ctx, &cro), "The placement field is immutable")
+
+			Expect(hubClient.Delete(ctx, &cro)).Should(Succeed())
+		})
+
+		It("should deny adding placement when originally nil", func() {
+			cro := createValidClusterResourceOverride(
+				fmt.Sprintf(celCRONameTemplate+"-immut2", GinkgoParallelProcess()),
+				nil,
+			)
+			Expect(hubClient.Create(ctx, &cro)).Should(Succeed())
+
+			cro.Spec.Placement = &placementv1beta1.PlacementRef{
+				Name:  "new-placement",
+				Scope: placementv1beta1.ClusterScoped,
+			}
+			expectCELValidationError(hubClient.Update(ctx, &cro), "The placement field is immutable")
+
+			Expect(hubClient.Delete(ctx, &cro)).Should(Succeed())
 		})
 	})
 

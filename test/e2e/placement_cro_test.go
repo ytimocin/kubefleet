@@ -18,7 +18,6 @@ package e2e
 import (
 	"fmt"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -955,9 +954,9 @@ var _ = Context("creating clusterResourceOverride for a namespace-only CRP", Ord
 	})
 })
 
-// This test verifies that the automatic member-cluster-name label can be used to target
+// This test verifies that the automatic member-name label can be used to target
 // a specific cluster by name in a ClusterResourceOverride via labelSelector.
-var _ = Context("creating clusterResourceOverride selecting a single cluster by the member-cluster-name label", Ordered, func() {
+var _ = Context("creating clusterResourceOverride selecting a single cluster by the member-name label", Ordered, func() {
 	crpName := fmt.Sprintf(crpNameTemplate, GinkgoParallelProcess())
 	croName := fmt.Sprintf(croNameTemplate, GinkgoParallelProcess())
 	croSnapShotName := fmt.Sprintf(placementv1beta1.OverrideSnapshotNameFmt, croName, 0)
@@ -971,7 +970,7 @@ var _ = Context("creating clusterResourceOverride selecting a single cluster by 
 		By("creating work resources")
 		createWorkResources()
 
-		// Create the CRO that selects a single cluster using the member-cluster-name label.
+		// Create the CRO that selects a single cluster using the member-name label.
 		cro := &placementv1beta1.ClusterResourceOverride{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: croName,
@@ -986,7 +985,7 @@ var _ = Context("creating clusterResourceOverride selecting a single cluster by 
 									{
 										LabelSelector: &metav1.LabelSelector{
 											MatchLabels: map[string]string{
-												placementv1beta1.MemberClusterNameLabel: targetCluster.ClusterName,
+												placementv1beta1.MemberNameLabel: targetCluster.ClusterName,
 											},
 										},
 									},
@@ -1027,39 +1026,11 @@ var _ = Context("creating clusterResourceOverride selecting a single cluster by 
 
 	It("should update CRP status as expected", func() {
 		wantCRONames := []string{croSnapShotName}
-		crpKey := types.NamespacedName{Name: crpName}
 		// The CRO targets only one cluster via clusterSelector, so only the targeted
 		// cluster should have ApplicableClusterResourceOverrides set.
-		crpStatusUpdatedActual := func() error {
-			crp := &placementv1beta1.ClusterResourcePlacement{}
-			if err := hubClient.Get(ctx, crpKey, crp); err != nil {
-				return err
-			}
-			var wantPerClusterStatuses []placementv1beta1.PerClusterPlacementStatus
-			for _, name := range allMemberClusterNames {
-				status := placementv1beta1.PerClusterPlacementStatus{
-					ClusterName:           name,
-					ObservedResourceIndex: "0",
-				}
-				if name == targetCluster.ClusterName {
-					status.ApplicableClusterResourceOverrides = wantCRONames
-					status.Conditions = perClusterRolloutCompletedConditions(crp.Generation, true, true)
-				} else {
-					status.Conditions = perClusterRolloutCompletedConditions(crp.Generation, true, false)
-				}
-				wantPerClusterStatuses = append(wantPerClusterStatuses, status)
-			}
-			wantStatus := &placementv1beta1.PlacementStatus{
-				Conditions:                  crpRolloutCompletedConditions(crp.Generation, true),
-				PerClusterPlacementStatuses: wantPerClusterStatuses,
-				SelectedResources:           workResourceIdentifiers(),
-				ObservedResourceIndex:       "0",
-			}
-			if diff := cmp.Diff(crp.GetPlacementStatus(), wantStatus, placementStatusCmpOptions...); diff != "" {
-				return fmt.Errorf("Placement status diff (-got, +want): %s", diff)
-			}
-			return nil
-		}
+		crpStatusUpdatedActual := crpStatusWithSingleClusterOverrideUpdatedActual(
+			workResourceIdentifiers(), allMemberClusterNames, "0",
+			targetCluster.ClusterName, wantCRONames, nil)
 		Eventually(crpStatusUpdatedActual, eventuallyDuration, eventuallyInterval).Should(Succeed(), "Failed to update CRP %s status as expected", crpName)
 	})
 
@@ -1067,12 +1038,10 @@ var _ = Context("creating clusterResourceOverride selecting a single cluster by 
 
 	It("should have override annotation only on the targeted cluster", func() {
 		wantAnnotations := map[string]string{croTestAnnotationKey: croTestAnnotationValue}
-		Eventually(func() error {
-			return validateAnnotationOfWorkNamespaceOnCluster(targetCluster, wantAnnotations)
-		}, eventuallyDuration, eventuallyInterval).Should(Succeed(), "Failed to override annotation on targeted cluster %s", targetCluster.ClusterName)
-		Eventually(func() error {
-			return validateAnnotationOfConfigMapOnCluster(targetCluster, wantAnnotations)
-		}, eventuallyDuration, eventuallyInterval).Should(Succeed(), "Failed to override configmap annotation on targeted cluster %s", targetCluster.ClusterName)
+		Expect(validateAnnotationOfWorkNamespaceOnCluster(targetCluster, wantAnnotations)).Should(Succeed(),
+			"Failed to override annotation on targeted cluster %s", targetCluster.ClusterName)
+		Expect(validateAnnotationOfConfigMapOnCluster(targetCluster, wantAnnotations)).Should(Succeed(),
+			"Failed to override configmap annotation on targeted cluster %s", targetCluster.ClusterName)
 	})
 
 	It("should not have override annotation on other clusters", func() {
@@ -1080,9 +1049,13 @@ var _ = Context("creating clusterResourceOverride selecting a single cluster by 
 			if cluster.ClusterName == targetCluster.ClusterName {
 				continue
 			}
-			Expect(validateNamespaceNoAnnotationOnCluster(cluster, croTestAnnotationKey)).Should(Succeed(),
+			Consistently(func() error {
+				return validateNamespaceNoAnnotationOnCluster(cluster, croTestAnnotationKey)
+			}, consistentlyDuration, consistentlyInterval).Should(Succeed(),
 				"Override annotation should not be present on non-targeted cluster %s", cluster.ClusterName)
-			Expect(validateConfigMapNoAnnotationKeyOnCluster(cluster, croTestAnnotationKey)).Should(Succeed(),
+			Consistently(func() error {
+				return validateConfigMapNoAnnotationKeyOnCluster(cluster, croTestAnnotationKey)
+			}, consistentlyDuration, consistentlyInterval).Should(Succeed(),
 				"Override annotation should not be present on non-targeted cluster %s", cluster.ClusterName)
 		}
 	})

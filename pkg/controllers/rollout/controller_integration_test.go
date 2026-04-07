@@ -1926,8 +1926,8 @@ func generateResourceSnapshot(namespace, testRPName string, resourceIndex int, i
 
 func generateMemberCluster(idx int, clusterName string) *clusterv1beta1.MemberCluster {
 	clusterLabels := map[string]string{
-		"index":                                 strconv.Itoa(idx),
-		placementv1beta1.MemberClusterNameLabel: clusterName,
+		"index":                          strconv.Itoa(idx),
+		placementv1beta1.MemberNameLabel: clusterName,
 	}
 	return &clusterv1beta1.MemberCluster{
 		ObjectMeta: metav1.ObjectMeta{

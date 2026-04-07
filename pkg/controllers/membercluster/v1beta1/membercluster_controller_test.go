@@ -64,7 +64,7 @@ const (
 	propertyProviderConditionMessage2 = "property provider condition 2 message"
 )
 
-func TestEnsureMemberClusterNameLabel(t *testing.T) {
+func TestEnsureMemberNameLabel(t *testing.T) {
 	tests := map[string]struct {
 		r             *Reconciler
 		memberCluster *clusterv1beta1.MemberCluster
@@ -81,12 +81,12 @@ func TestEnsureMemberClusterNameLabel(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "mc1",
 					Labels: map[string]string{
-						placementv1beta1.MemberClusterNameLabel: "mc1",
+						placementv1beta1.MemberNameLabel: "mc1",
 					},
 				},
 			},
 			wantLabels: map[string]string{
-				placementv1beta1.MemberClusterNameLabel: "mc1",
+				placementv1beta1.MemberNameLabel: "mc1",
 			},
 		},
 		"no labels at all": {
@@ -103,7 +103,7 @@ func TestEnsureMemberClusterNameLabel(t *testing.T) {
 				},
 			},
 			wantLabels: map[string]string{
-				placementv1beta1.MemberClusterNameLabel: "mc1",
+				placementv1beta1.MemberNameLabel: "mc1",
 			},
 		},
 		"labels exist but name label is missing": {
@@ -123,8 +123,8 @@ func TestEnsureMemberClusterNameLabel(t *testing.T) {
 				},
 			},
 			wantLabels: map[string]string{
-				"existing-label":                        "value",
-				placementv1beta1.MemberClusterNameLabel: "mc1",
+				"existing-label":                 "value",
+				placementv1beta1.MemberNameLabel: "mc1",
 			},
 		},
 		"label present with wrong value": {
@@ -139,12 +139,12 @@ func TestEnsureMemberClusterNameLabel(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "mc1",
 					Labels: map[string]string{
-						placementv1beta1.MemberClusterNameLabel: "wrong-name",
+						placementv1beta1.MemberNameLabel: "wrong-name",
 					},
 				},
 			},
 			wantLabels: map[string]string{
-				placementv1beta1.MemberClusterNameLabel: "mc1",
+				placementv1beta1.MemberNameLabel: "mc1",
 			},
 		},
 		"update error": {
@@ -166,27 +166,27 @@ func TestEnsureMemberClusterNameLabel(t *testing.T) {
 
 	for testName, tt := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := tt.r.ensureMemberClusterNameLabel(context.Background(), tt.memberCluster)
+			err := tt.r.ensureMemberNameLabel(context.Background(), tt.memberCluster)
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Errorf("ensureMemberClusterNameLabel() = %v, want nil", err)
+					t.Errorf("ensureMemberNameLabel() = %v, want nil", err)
 				}
 				if diff := cmp.Diff(tt.wantLabels, tt.memberCluster.Labels); diff != "" {
-					t.Errorf("ensureMemberClusterNameLabel() labels mismatch (-want +got):\n%s", diff)
+					t.Errorf("ensureMemberNameLabel() labels mismatch (-want +got):\n%s", diff)
 				}
 			} else {
 				if err == nil {
-					t.Errorf("ensureMemberClusterNameLabel() = nil, want error containing %q", tt.wantErr)
+					t.Errorf("ensureMemberNameLabel() = nil, want error containing %q", tt.wantErr)
 				} else if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("ensureMemberClusterNameLabel() = %v, want error containing %q", err, tt.wantErr)
+					t.Errorf("ensureMemberNameLabel() = %v, want error containing %q", err, tt.wantErr)
 				}
 			}
 		})
 	}
 }
 
-func TestReconcileEnsureMemberClusterNameLabelError(t *testing.T) {
-	// This test verifies that Reconcile returns an error when ensureMemberClusterNameLabel fails.
+func TestReconcileEnsureMemberNameLabelError(t *testing.T) {
+	// This test verifies that Reconcile returns an error when ensureMemberNameLabel fails.
 	// The MC already has the finalizer (so ensureFinalizer is a no-op) but no label.
 	updateErr := errors.New("update failed")
 	r := &Reconciler{
@@ -195,7 +195,7 @@ func TestReconcileEnsureMemberClusterNameLabelError(t *testing.T) {
 				mc := obj.(*clusterv1beta1.MemberCluster)
 				mc.Name = "mc1"
 				mc.Finalizers = []string{placementv1beta1.MemberClusterFinalizer}
-				// No labels, so ensureMemberClusterNameLabel will attempt an update.
+				// No labels, so ensureMemberNameLabel will attempt an update.
 				return nil
 			},
 			MockUpdate: func(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
@@ -210,8 +210,8 @@ func TestReconcileEnsureMemberClusterNameLabelError(t *testing.T) {
 	if result != (ctrl.Result{}) {
 		t.Errorf("Reconcile() result = %v, want %v", result, ctrl.Result{})
 	}
-	if err == nil || !strings.Contains(err.Error(), "update failed") {
-		t.Errorf("Reconcile() error = %v, want error containing %q", err, "update failed")
+	if err == nil || !strings.Contains(err.Error(), updateErr.Error()) {
+		t.Errorf("Reconcile() error = %v, want error containing %q", err, updateErr.Error())
 	}
 }
 

@@ -286,8 +286,8 @@ func checkIfMemberClusterHasJoined(memberCluster *framework.Cluster) {
 		}
 
 		// Verify the member cluster name label is set.
-		if mcObj.Labels[placementv1beta1.MemberClusterNameLabel] != memberCluster.ClusterName {
-			return fmt.Errorf("member cluster name label = %q, want %q", mcObj.Labels[placementv1beta1.MemberClusterNameLabel], memberCluster.ClusterName)
+		if mcObj.Labels[placementv1beta1.MemberNameLabel] != memberCluster.ClusterName {
+			return fmt.Errorf("member cluster name label = %q, want %q", mcObj.Labels[placementv1beta1.MemberNameLabel], memberCluster.ClusterName)
 		}
 
 		return nil

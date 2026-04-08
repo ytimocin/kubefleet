@@ -523,7 +523,6 @@ func (rs *ResourceSelectorResolver) fetchResources(selector placementv1beta1.Res
 
 	lister := rs.InformerManager.Lister(gvr)
 
-	// TODO: validator should enforce the mutual exclusiveness between the `name` and `labelSelector` fields
 	if len(selector.Name) != 0 {
 		var obj runtime.Object
 		var err error
@@ -553,7 +552,6 @@ func (rs *ResourceSelectorResolver) fetchResources(selector placementv1beta1.Res
 	if selector.LabelSelector == nil {
 		labelSelector = labels.Everything()
 	} else {
-		// TODO: validator should enforce the validity of the labelSelector
 		labelSelector, err = metav1.LabelSelectorAsSelector(selector.LabelSelector)
 		if err != nil {
 			return nil, NewUnexpectedBehaviorError(fmt.Errorf("cannot convert the label selector to a selector: %w", err))

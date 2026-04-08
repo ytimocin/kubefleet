@@ -133,6 +133,6 @@ func (t *fakeController) Enqueue(_ interface{}) {
 }
 
 func (t *fakeController) Run(_ context.Context, _ int) error {
-	//TODO implement me
+	// intentionally unimplemented — test fake only uses Enqueue()
 	panic("implement me")
 }

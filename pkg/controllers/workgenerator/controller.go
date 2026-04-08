@@ -71,7 +71,6 @@ var (
 
 // Reconciler watches binding objects and generate work objects in the designated cluster namespace
 // according to the information in the binding objects.
-// TODO: incorporate an overriding policy if one exists
 type Reconciler struct {
 	client.Client
 	// the max number of concurrent reconciles per controller.
@@ -453,8 +452,6 @@ func (r *Reconciler) syncAllWork(ctx context.Context, resourceBinding fleetv1bet
 	if err != nil {
 		return false, false, controller.NewUnexpectedBehaviorError(err)
 	}
-	// TODO: check all work synced first before fetching the snapshots after we put ParentResourceOverrideSnapshotHashAnnotation and ParentClusterResourceOverrideSnapshotHashAnnotation in all the work objects
-
 	// Gather all the resource resourceSnapshots
 	resourceSnapshots, err := r.fetchAllResourceSnapshots(ctx, resourceBinding)
 	if err != nil {
@@ -680,19 +677,11 @@ func areAllWorkSynced(existingWorks map[string]*fleetv1beta1.Work, resourceBindi
 		return false
 	}
 
-	// TODO: check resourceOverrideSnapshotHash and  clusterResourceOverrideSnapshotHash after all the work has the ParentResourceOverrideSnapshotHashAnnotation and ParentClusterResourceOverrideSnapshotHashAnnotation
 	resourceSnapshotName := resourceBinding.GetBindingSpec().ResourceSnapshotName
 	for _, work := range existingWorks {
-		recordedName, exist := work.Annotations[fleetv1beta1.ParentResourceSnapshotNameAnnotation]
-		if !exist {
-			// TODO: remove this block after all the work has the ParentResourceSnapshotNameAnnotation
-			// the parent resource snapshot name is not recorded in the work, we need to construct it from the labels
-			crpName := resourceBinding.GetLabels()[fleetv1beta1.PlacementTrackingLabel]
-			index, _ := labels.ExtractResourceSnapshotIndexFromWork(work)
-			recordedName = fmt.Sprintf(fleetv1beta1.ResourceSnapshotNameFmt, crpName, index)
-		}
+		recordedName := work.Annotations[fleetv1beta1.ParentResourceSnapshotNameAnnotation]
 		if recordedName != resourceSnapshotName {
-			klog.V(2).InfoS("The work is not synced with the binding", "work", klog.KObj(work), "binding", klog.KObj(resourceBinding), "annotationExist", exist, "recordedName", recordedName, "resourceSnapshotName", resourceSnapshotName)
+			klog.V(2).InfoS("The work is not synced with the binding", "work", klog.KObj(work), "binding", klog.KObj(resourceBinding), "recordedName", recordedName, "resourceSnapshotName", resourceSnapshotName)
 			return false
 		}
 	}

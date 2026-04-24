@@ -29,7 +29,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -740,48 +739,58 @@ func createResourceContent(t *testing.T, obj runtime.Object) *fleetv1beta1.Resou
 // of the envelope's identity. Determinism is what lets the API server enforce the
 // "one Work per (binding, envelope)" invariant via name uniqueness.
 func TestEnvelopeWorkNameSuffix(t *testing.T) {
-	resourceEnvelope := &fleetv1beta1.ResourceEnvelope{
+	base := &fleetv1beta1.ResourceEnvelope{
 		ObjectMeta: metav1.ObjectMeta{Name: "env-a", Namespace: "ns-1"},
 	}
-	sameResourceEnvelope := &fleetv1beta1.ResourceEnvelope{
-		ObjectMeta: metav1.ObjectMeta{Name: "env-a", Namespace: "ns-1"},
-	}
-	differentName := &fleetv1beta1.ResourceEnvelope{
-		ObjectMeta: metav1.ObjectMeta{Name: "env-b", Namespace: "ns-1"},
-	}
-	differentNamespace := &fleetv1beta1.ResourceEnvelope{
-		ObjectMeta: metav1.ObjectMeta{Name: "env-a", Namespace: "ns-2"},
-	}
-	clusterEnvelope := &fleetv1beta1.ClusterResourceEnvelope{
-		ObjectMeta: metav1.ObjectMeta{Name: "env-a"}, // same name as resourceEnvelope, but cluster-scoped
-	}
 
-	// Same identity → identical suffix.
-	if got, want := envelopeWorkNameSuffix(resourceEnvelope), envelopeWorkNameSuffix(sameResourceEnvelope); got != want {
-		t.Errorf("envelopeWorkNameSuffix(%v) = %q, want %q (same identity should hash the same)", resourceEnvelope, got, want)
-	}
-
-	// Different identities → different suffixes.
-	for _, other := range []struct {
-		name string
-		r    fleetv1beta1.EnvelopeReader
+	tests := []struct {
+		name      string
+		other     fleetv1beta1.EnvelopeReader
+		wantEqual bool // true → suffix must match base; false → suffix must differ
 	}{
-		{"different name", differentName},
-		{"different namespace", differentNamespace},
-		{"different type (cluster-scoped vs namespaced, same name)", clusterEnvelope},
-	} {
-		if got, collision := envelopeWorkNameSuffix(resourceEnvelope), envelopeWorkNameSuffix(other.r); got == collision {
-			t.Errorf("envelopeWorkNameSuffix collision for %s: both %q", other.name, got)
-		}
+		{
+			name:      "same identity",
+			other:     &fleetv1beta1.ResourceEnvelope{ObjectMeta: metav1.ObjectMeta{Name: "env-a", Namespace: "ns-1"}},
+			wantEqual: true,
+		},
+		{
+			name:      "different name",
+			other:     &fleetv1beta1.ResourceEnvelope{ObjectMeta: metav1.ObjectMeta{Name: "env-b", Namespace: "ns-1"}},
+			wantEqual: false,
+		},
+		{
+			name:      "different namespace",
+			other:     &fleetv1beta1.ResourceEnvelope{ObjectMeta: metav1.ObjectMeta{Name: "env-a", Namespace: "ns-2"}},
+			wantEqual: false,
+		},
+		{
+			// Same name as base, but cluster-scoped — the type field in the hash input disambiguates.
+			name:      "different type, same name",
+			other:     &fleetv1beta1.ClusterResourceEnvelope{ObjectMeta: metav1.ObjectMeta{Name: "env-a"}},
+			wantEqual: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotBase := envelopeWorkNameSuffix(base)
+			gotOther := envelopeWorkNameSuffix(tt.other)
+			if tt.wantEqual && gotBase != gotOther {
+				t.Errorf("envelopeWorkNameSuffix(%v) = %q, envelopeWorkNameSuffix(%v) = %q, want equal", base, gotBase, tt.other, gotOther)
+			}
+			if !tt.wantEqual && gotBase == gotOther {
+				t.Errorf("envelopeWorkNameSuffix(%v) = envelopeWorkNameSuffix(%v) = %q, want different", base, tt.other, gotBase)
+			}
+		})
 	}
 
 	// Suffix is bounded and DNS-1123-safe (lowercase hex).
-	suffix := envelopeWorkNameSuffix(resourceEnvelope)
+	suffix := envelopeWorkNameSuffix(base)
 	if len(suffix) != 16 {
 		t.Errorf("envelopeWorkNameSuffix length = %d, want 16", len(suffix))
 	}
 	if strings.ToLower(suffix) != suffix {
-		t.Errorf("envelopeWorkNameSuffix(%v) = %q, want lowercase", resourceEnvelope, suffix)
+		t.Errorf("envelopeWorkNameSuffix(%v) = %q, want lowercase", base, suffix)
 	}
 }
 
@@ -871,15 +880,9 @@ func TestCreateOrUpdateEnvelopeCRWorkObj_DuplicateWorksSurfaceWithoutMutation(t 
 	if err := fakeClient.List(ctx, remaining, client.InNamespace(workNamespace)); err != nil {
 		t.Fatalf("List Works in %q: %v", workNamespace, err)
 	}
-	if len(remaining.Items) != len(dupNames) {
-		t.Errorf("remaining Works = %d (%v), want %d (no mutation expected)",
-			len(remaining.Items), workNames(remaining.Items), len(dupNames))
-	}
-	for _, n := range dupNames {
-		var w fleetv1beta1.Work
-		if err := fakeClient.Get(ctx, types.NamespacedName{Namespace: workNamespace, Name: n}, &w); err != nil {
-			t.Errorf("Work %q missing after call, expected still present: %v", n, err)
-		}
+	sortStrings := cmpopts.SortSlices(func(a, b string) bool { return a < b })
+	if diff := cmp.Diff(dupNames, workNames(remaining.Items), sortStrings); diff != "" {
+		t.Errorf("Works after call mismatch (-want +got):\n%s", diff)
 	}
 
 	// Post-condition: a Warning Event was emitted so operators can see the stuck state.

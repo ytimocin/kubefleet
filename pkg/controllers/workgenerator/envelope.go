@@ -215,9 +215,9 @@ func refreshWorkForEnvelopeCR(
 // derived from the envelope's identity. Using a deterministic suffix (instead of a random
 // UUID) means two concurrent Create attempts for the same envelope collide on name at the
 // API server, which enforces the "one Work per (binding, envelope)" invariant server-side.
-// The hash is truncated to 16 hex characters (8 bytes of SHA-256), keeping the overall
-// Work name well under the DNS-1123 subdomain limit; collision probability at the scale
-// of a single binding's envelope set is ~2^-64.
+// The hash is truncated to 8 bytes of SHA-256 (rendered as 16 hex characters), keeping
+// the overall Work name well under the DNS-1123 subdomain limit; collision probability
+// at the scale of a single binding's envelope set is ~2^-64.
 func envelopeWorkNameSuffix(envelopeReader fleetv1beta1.EnvelopeReader) string {
 	// NOTE: ClusterResourceEnvelope has an empty namespace; ResourceEnvelope has a namespace.
 	// Including the type disambiguates an unlikely name collision across kinds.

@@ -19,7 +19,9 @@ package resourcewatcher
 import (
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
@@ -162,5 +164,116 @@ func TestChangeDetector_NeedLeaderElection(t *testing.T) {
 	// ChangeDetector SHOULD need leader election so only the leader processes events
 	if !detector.NeedLeaderElection() {
 		t.Error("ChangeDetector should need leader election")
+	}
+}
+
+func TestChangeDetector_dynamicResourceFilter(t *testing.T) {
+	unstructuredConfigMap := func(namespace, name string) *unstructured.Unstructured {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind(utils.ConfigMapKind))
+		u.SetNamespace(namespace)
+		u.SetName(name)
+		return u
+	}
+	unstructuredClusterRole := func(name string) *unstructured.Unstructured {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"})
+		u.SetName(name)
+		return u
+	}
+	typedSecret := func(namespace, name string) *corev1.Secret {
+		return &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Secret",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      name,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		obj               interface{}
+		skippedNamespaces map[string]bool
+		want              bool
+	}{
+		{
+			name: "non-runtime object is filtered out",
+			obj:  "not-a-runtime-object",
+			want: false,
+		},
+		{
+			name: "nil object is filtered out",
+			obj:  nil,
+			want: false,
+		},
+		{
+			// Tombstones from informer cache deletions are not unwrapped by ClusterWideKeyFunc,
+			// so the filter rejects them. The downstream delete handler unwraps tombstones separately.
+			name: "tombstone object is filtered out",
+			obj:  cache.DeletedFinalStateUnknown{Key: "default/cm", Obj: unstructuredConfigMap("default", "cm")},
+			want: false,
+		},
+		{
+			name: "object in fleet-prefixed namespace is filtered out",
+			obj:  unstructuredConfigMap("fleet-system", "cm"),
+			want: false,
+		},
+		{
+			name: "object in kube-prefixed namespace is filtered out",
+			obj:  unstructuredConfigMap("kube-system", "cm"),
+			want: false,
+		},
+		{
+			name:              "object in user-skipped namespace is filtered out",
+			obj:               unstructuredConfigMap("skip-me", "cm"),
+			skippedNamespaces: map[string]bool{"skip-me": true},
+			want:              false,
+		},
+		{
+			name: "unstructured ConfigMap kube-root-ca.crt is filtered out by ShouldPropagateObj",
+			obj:  unstructuredConfigMap("default", "kube-root-ca.crt"),
+			want: false,
+		},
+		{
+			name: "unstructured ConfigMap with regular name is allowed",
+			obj:  unstructuredConfigMap("default", "user-config"),
+			want: true,
+		},
+		{
+			// Cluster-scoped objects have an empty namespace; ShouldPropagateNamespace returns true
+			// for "" (no reserved prefix match, not in skip-list).
+			name: "cluster-scoped unstructured object is allowed",
+			obj:  unstructuredClusterRole("admin"),
+			want: true,
+		},
+		{
+			// Typed objects bypass the ShouldPropagateObj check because the type assertion to
+			// *unstructured.Unstructured fails. In production the dynamic informer only emits
+			// unstructured objects, but this case documents the bypass.
+			name: "typed object bypasses ShouldPropagateObj and is allowed",
+			obj:  typedSecret("default", "my-secret"),
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeInformerManager := &testinformer.FakeManager{
+				APIResources: make(map[schema.GroupVersionKind]bool),
+			}
+			detector := &ChangeDetector{
+				InformerManager:   fakeInformerManager,
+				SkippedNamespaces: tt.skippedNamespaces,
+			}
+
+			got := detector.dynamicResourceFilter(tt.obj)
+			if got != tt.want {
+				t.Errorf("dynamicResourceFilter(%v) = %v, want %v", tt.obj, got, tt.want)
+			}
+		})
 	}
 }

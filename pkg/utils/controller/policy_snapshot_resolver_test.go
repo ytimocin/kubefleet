@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -898,6 +899,208 @@ func TestListPolicySnapshots(t *testing.T) {
 
 			if len(snapshots.GetPolicySnapshotObjs()) != tc.expectedSnapshots {
 				t.Errorf("Expected %d snapshots, got %d", tc.expectedSnapshots, len(snapshots.GetPolicySnapshotObjs()))
+			}
+		})
+	}
+}
+
+func TestIsLatestPolicySnapshot(t *testing.T) {
+	snapshotWithLabels := func(labels map[string]string) fleetv1beta1.PolicySnapshotObj {
+		return &fleetv1beta1.ClusterSchedulingPolicySnapshot{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   policySnapshotName,
+				Labels: labels,
+			},
+		}
+	}
+
+	testCases := []struct {
+		name     string
+		snapshot fleetv1beta1.PolicySnapshotObj
+		want     bool
+		wantErr  bool
+	}{
+		{
+			name:     "label true returns true",
+			snapshot: snapshotWithLabels(map[string]string{fleetv1beta1.IsLatestSnapshotLabel: "true"}),
+			want:     true,
+			wantErr:  false,
+		},
+		{
+			name:     "label false returns false",
+			snapshot: snapshotWithLabels(map[string]string{fleetv1beta1.IsLatestSnapshotLabel: "false"}),
+			want:     false,
+			wantErr:  false,
+		},
+		{
+			name:     "label missing returns false with unexpected-behavior error",
+			snapshot: snapshotWithLabels(map[string]string{fleetv1beta1.PlacementTrackingLabel: placementName}),
+			want:     false,
+			wantErr:  true,
+		},
+		{
+			name:     "nil labels returns false with unexpected-behavior error",
+			snapshot: snapshotWithLabels(nil),
+			want:     false,
+			wantErr:  true,
+		},
+		{
+			name:     "label malformed returns false with unexpected-behavior error",
+			snapshot: snapshotWithLabels(map[string]string{fleetv1beta1.IsLatestSnapshotLabel: "yes"}),
+			want:     false,
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := IsLatestPolicySnapshot(tc.snapshot)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("IsLatestPolicySnapshot() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrUnexpectedBehavior) {
+				t.Errorf("IsLatestPolicySnapshot() error = %v, want wrapping ErrUnexpectedBehavior", err)
+			}
+			if got != tc.want {
+				t.Errorf("IsLatestPolicySnapshot() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLookupLatestPolicySnapshot(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := fleetv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("Failed to add to scheme: %v", err)
+	}
+
+	clusterPlacement := &fleetv1beta1.ClusterResourcePlacement{
+		ObjectMeta: metav1.ObjectMeta{Name: placementName},
+	}
+	namespacedPlacement := &fleetv1beta1.ResourcePlacement{
+		ObjectMeta: metav1.ObjectMeta{Name: placementName, Namespace: policySnapshotNamespace},
+	}
+
+	clusterLatestSnapshot := func(name string) *fleetv1beta1.ClusterSchedulingPolicySnapshot {
+		return &fleetv1beta1.ClusterSchedulingPolicySnapshot{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Labels: map[string]string{
+					fleetv1beta1.PlacementTrackingLabel: placementName,
+					fleetv1beta1.IsLatestSnapshotLabel:  "true",
+				},
+			},
+		}
+	}
+	namespacedLatestSnapshot := func(name string) *fleetv1beta1.SchedulingPolicySnapshot {
+		return &fleetv1beta1.SchedulingPolicySnapshot{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: policySnapshotNamespace,
+				Labels: map[string]string{
+					fleetv1beta1.PlacementTrackingLabel: placementName,
+					fleetv1beta1.IsLatestSnapshotLabel:  "true",
+				},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name              string
+		placement         fleetv1beta1.PlacementObj
+		existingSnapshots []client.Object
+		wantName          string
+		wantErr           bool
+		wantUnexpected    bool
+	}{
+		{
+			name:              "exactly one cluster-scoped latest snapshot",
+			placement:         clusterPlacement,
+			existingSnapshots: []client.Object{clusterLatestSnapshot("test-placement-0")},
+			wantName:          "test-placement-0",
+		},
+		{
+			name:              "exactly one namespaced latest snapshot",
+			placement:         namespacedPlacement,
+			existingSnapshots: []client.Object{namespacedLatestSnapshot("test-placement-0")},
+			wantName:          "test-placement-0",
+		},
+		{
+			name:              "no latest snapshot returns error (not unexpected-behavior)",
+			placement:         clusterPlacement,
+			existingSnapshots: nil,
+			wantErr:           true,
+			wantUnexpected:    false,
+		},
+		{
+			name:      "multiple latest snapshots returns unexpected-behavior error",
+			placement: clusterPlacement,
+			existingSnapshots: []client.Object{
+				clusterLatestSnapshot("test-placement-0"),
+				clusterLatestSnapshot("test-placement-1"),
+			},
+			wantErr:        true,
+			wantUnexpected: true,
+		},
+		{
+			name:      "ignores snapshots from other placements",
+			placement: clusterPlacement,
+			existingSnapshots: []client.Object{
+				clusterLatestSnapshot("test-placement-0"),
+				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "other-placement-0",
+						Labels: map[string]string{
+							fleetv1beta1.PlacementTrackingLabel: "other-placement",
+							fleetv1beta1.IsLatestSnapshotLabel:  "true",
+						},
+					},
+				},
+			},
+			wantName: "test-placement-0",
+		},
+		{
+			name:      "ignores non-latest snapshots",
+			placement: clusterPlacement,
+			existingSnapshots: []client.Object{
+				clusterLatestSnapshot("test-placement-1"),
+				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-placement-0",
+						Labels: map[string]string{
+							fleetv1beta1.PlacementTrackingLabel: placementName,
+							fleetv1beta1.IsLatestSnapshotLabel:  "false",
+						},
+					},
+				},
+			},
+			wantName: "test-placement-1",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tc.existingSnapshots...).
+				Build()
+
+			got, err := LookupLatestPolicySnapshot(ctx, fakeClient, tc.placement)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("LookupLatestPolicySnapshot() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				if tc.wantUnexpected && !errors.Is(err, ErrUnexpectedBehavior) {
+					t.Errorf("LookupLatestPolicySnapshot() error = %v, want wrapping ErrUnexpectedBehavior", err)
+				}
+				if !tc.wantUnexpected && errors.Is(err, ErrUnexpectedBehavior) {
+					t.Errorf("LookupLatestPolicySnapshot() error = %v, did not expect ErrUnexpectedBehavior wrapping", err)
+				}
+				return
+			}
+			if got == nil || got.GetName() != tc.wantName {
+				t.Errorf("LookupLatestPolicySnapshot() returned snapshot %v, want %s", got, tc.wantName)
 			}
 		})
 	}

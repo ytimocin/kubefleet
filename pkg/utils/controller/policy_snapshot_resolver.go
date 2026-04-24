@@ -110,6 +110,55 @@ func BuildPolicySnapshot(placementObj fleetv1beta1.PlacementObj, policySnapshotI
 	return snapshot
 }
 
+// IsLatestPolicySnapshot reports whether the given policy snapshot carries the IsLatestSnapshot
+// label set to "true". A non-nil error is returned if the label is missing or its value cannot be
+// parsed as a bool; in those cases the boolean result is false.
+//
+// Callers typically log the error and treat the snapshot as non-latest, since the controller cannot
+// recover from a malformed label by itself — the placement controller will repair it and re-trigger
+// reconciliation.
+func IsLatestPolicySnapshot(snapshot fleetv1beta1.PolicySnapshotObj) (bool, error) {
+	val, ok := snapshot.GetLabels()[fleetv1beta1.IsLatestSnapshotLabel]
+	if !ok {
+		return false, NewUnexpectedBehaviorError(fmt.Errorf("%s label is missing", fleetv1beta1.IsLatestSnapshotLabel))
+	}
+	isLatest, err := strconv.ParseBool(val)
+	if err != nil {
+		return false, NewUnexpectedBehaviorError(fmt.Errorf("failed to parse %s label value %q: %w", fleetv1beta1.IsLatestSnapshotLabel, val, err))
+	}
+	return isLatest, nil
+}
+
+// LookupLatestPolicySnapshot returns the single active (latest) policy snapshot associated with the
+// given placement. It is a thin wrapper over FetchLatestPolicySnapshot that enforces the
+// "exactly one latest snapshot" invariant.
+//
+// Returns:
+//   - (snapshot, nil) when exactly one latest snapshot exists.
+//   - (nil, error) when zero, more than one, or a List error occurs. The "zero" case may happen
+//     transiently when a placement is newly created or its latest snapshot is being replaced;
+//     callers typically log and let the next event re-trigger reconciliation.
+//
+// The API-error path is logged inside both FetchLatestPolicySnapshot and NewAPIServerError; the
+// duplication is preserved here so callers that wrap the error get consistent classification, at
+// the cost of one extra log line on List failures.
+func LookupLatestPolicySnapshot(ctx context.Context, k8Client client.Reader, placement fleetv1beta1.PlacementObj) (fleetv1beta1.PolicySnapshotObj, error) {
+	placementKey := types.NamespacedName{Namespace: placement.GetNamespace(), Name: placement.GetName()}
+	policySnapshotList, err := FetchLatestPolicySnapshot(ctx, k8Client, placementKey)
+	if err != nil {
+		return nil, NewAPIServerError(true, err)
+	}
+	policySnapshots := policySnapshotList.GetPolicySnapshotObjs()
+	switch len(policySnapshots) {
+	case 0:
+		return nil, fmt.Errorf("no latest policy snapshot associated with placement %s", placementKey)
+	case 1:
+		return policySnapshots[0], nil
+	default:
+		return nil, NewUnexpectedBehaviorError(fmt.Errorf("too many active policy snapshots for placement %s: got %d, want 1", placementKey, len(policySnapshots)))
+	}
+}
+
 // FetchLatestPolicySnapshot fetches the latest policy snapshot for a given placement.
 // For cluster-scoped placements, it fetches ClusterSchedulingPolicySnapshot.
 // For namespaced placements, it fetches SchedulingPolicySnapshot.

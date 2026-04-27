@@ -130,63 +130,49 @@ func IsLatestPolicySnapshot(snapshot fleetv1beta1.PolicySnapshotObj) (bool, erro
 }
 
 // LookupLatestPolicySnapshot returns the single active (latest) policy snapshot associated with the
-// given placement. It is a thin wrapper over FetchLatestPolicySnapshot that enforces the
-// "exactly one latest snapshot" invariant.
+// placement identified by placementKey, enforcing the "exactly one latest snapshot" invariant.
+// A namespaced placementKey selects SchedulingPolicySnapshot; a cluster-scoped key (empty
+// namespace) selects ClusterSchedulingPolicySnapshot.
 //
 // Returns:
 //   - (snapshot, nil) when exactly one latest snapshot exists.
-//   - (nil, error) when zero, more than one, or a List error occurs. The "zero" case may happen
-//     transiently when a placement is newly created or its latest snapshot is being replaced;
-//     callers typically log and let the next event re-trigger reconciliation.
-//
-// The API-error path is logged inside both FetchLatestPolicySnapshot and NewAPIServerError; the
-// duplication is preserved here so callers that wrap the error get consistent classification, at
-// the cost of one extra log line on List failures.
-func LookupLatestPolicySnapshot(ctx context.Context, k8Client client.Reader, placement fleetv1beta1.PlacementObj) (fleetv1beta1.PolicySnapshotObj, error) {
-	placementKey := types.NamespacedName{Namespace: placement.GetNamespace(), Name: placement.GetName()}
-	policySnapshotList, err := FetchLatestPolicySnapshot(ctx, k8Client, placementKey)
-	if err != nil {
+//   - (nil, ErrNoLatestPolicySnapshot-wrapped error) when none exist. This is a transient state for
+//     newly-created placements or in-progress rotations; callers branch on it via errors.Is.
+//   - (nil, ErrMultipleActivePolicySnapshots-wrapped error) when more than one exists.
+//   - (nil, ErrAPIServerError-wrapped error) when the List call fails. The List error is also
+//     promoted to ErrUnexpectedBehavior for unexpected cache failures; callers must NOT collapse
+//     ErrUnexpectedBehavior with the dedicated invariant sentinels above when classifying retries.
+func LookupLatestPolicySnapshot(ctx context.Context, k8Client client.Reader, placementKey types.NamespacedName) (fleetv1beta1.PolicySnapshotObj, error) {
+	var policySnapshotList fleetv1beta1.PolicySnapshotList
+	listOptions := []client.ListOption{
+		client.MatchingLabels{
+			fleetv1beta1.PlacementTrackingLabel: placementKey.Name,
+			fleetv1beta1.IsLatestSnapshotLabel:  strconv.FormatBool(true),
+		},
+	}
+	if placementKey.Namespace != "" {
+		policySnapshotList = &fleetv1beta1.SchedulingPolicySnapshotList{}
+		listOptions = append(listOptions, client.InNamespace(placementKey.Namespace))
+	} else {
+		policySnapshotList = &fleetv1beta1.ClusterSchedulingPolicySnapshotList{}
+	}
+	if err := k8Client.List(ctx, policySnapshotList, listOptions...); err != nil {
+		klog.ErrorS(err, "Failed to list the policySnapshots associated with the placement", "placement", placementKey)
 		return nil, NewAPIServerError(true, err)
 	}
+
 	policySnapshots := policySnapshotList.GetPolicySnapshotObjs()
 	switch len(policySnapshots) {
 	case 0:
-		return nil, fmt.Errorf("no latest policy snapshot associated with placement %s", placementKey)
+		return nil, fmt.Errorf("%w for placement %s", ErrNoLatestPolicySnapshot, placementKey)
 	case 1:
 		return policySnapshots[0], nil
 	default:
-		return nil, NewUnexpectedBehaviorError(fmt.Errorf("too many active policy snapshots for placement %s: got %d, want 1", placementKey, len(policySnapshots)))
+		// Wrap both the specific invariant sentinel and the categorical ErrUnexpectedBehavior so
+		// callers that branch on either continue to work; the specific sentinel lets retry-gate
+		// callers distinguish this invariant violation from transient ErrUnexpectedBehavior errors.
+		return nil, fmt.Errorf("%w: %w for placement %s: got %d, want 1", ErrUnexpectedBehavior, ErrMultipleActivePolicySnapshots, placementKey, len(policySnapshots))
 	}
-}
-
-// FetchLatestPolicySnapshot fetches the latest policy snapshot for a given placement.
-// For cluster-scoped placements, it fetches ClusterSchedulingPolicySnapshot.
-// For namespaced placements, it fetches SchedulingPolicySnapshot.
-func FetchLatestPolicySnapshot(ctx context.Context, k8Client client.Reader, placementKey types.NamespacedName) (fleetv1beta1.PolicySnapshotList, error) {
-	namespace := placementKey.Namespace
-	name := placementKey.Name
-
-	var policySnapshotList fleetv1beta1.PolicySnapshotList
-	var listOptions []client.ListOption
-	listOptions = append(listOptions, client.MatchingLabels{
-		fleetv1beta1.PlacementTrackingLabel: name,
-		fleetv1beta1.IsLatestSnapshotLabel:  strconv.FormatBool(true),
-	})
-
-	if namespace != "" {
-		// This is a namespaced SchedulingPolicySnapshotList
-		policySnapshotList = &fleetv1beta1.SchedulingPolicySnapshotList{}
-		listOptions = append(listOptions, client.InNamespace(namespace))
-	} else {
-		// This is a cluster-scoped ClusterSchedulingPolicySnapshotList
-		policySnapshotList = &fleetv1beta1.ClusterSchedulingPolicySnapshotList{}
-	}
-
-	if err := k8Client.List(ctx, policySnapshotList, listOptions...); err != nil {
-		klog.ErrorS(err, "Failed to list the policySnapshots associated with the placement", "placement", placementKey)
-		return nil, err
-	}
-	return policySnapshotList, nil
 }
 
 // ListPolicySnapshots lists all policy snapshots associated with a placement key.

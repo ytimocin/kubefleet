@@ -354,7 +354,7 @@ func (s *Scheduler) cleanUpAllBindingsFor(ctx context.Context, placement fleetv1
 // latest snapshot is being replaced; the scheduler will be triggered again when the situation
 // corrects itself, so this is logged and surfaced as a non-unexpected error.
 func (s *Scheduler) lookupLatestPolicySnapshot(ctx context.Context, placement fleetv1beta1.PlacementObj) (fleetv1beta1.PolicySnapshotObj, error) {
-	snapshot, err := controller.LookupLatestPolicySnapshot(ctx, s.client, placement)
+	snapshot, err := controller.LookupLatestPolicySnapshot(ctx, s.client, types.NamespacedName{Namespace: placement.GetNamespace(), Name: placement.GetName()})
 	if err != nil {
 		klog.ErrorS(err, "Failed to look up latest policy snapshot, will retry", "placement", klog.KObj(placement))
 		return nil, err

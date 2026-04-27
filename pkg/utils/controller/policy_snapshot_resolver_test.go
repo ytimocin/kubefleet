@@ -490,193 +490,6 @@ func TestBuildPolicySnapshot(t *testing.T) {
 	}
 }
 
-func TestFetchLatestPolicySnapshot(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := fleetv1beta1.AddToScheme(scheme); err != nil {
-		t.Fatalf("Failed to add to scheme: %v", err)
-	}
-
-	testCases := []struct {
-		name              string
-		placementKey      types.NamespacedName
-		existingSnapshots []client.Object
-		expectedSnapshots int
-	}{
-		{
-			name: "fetch latest cluster scoped policy snapshots",
-			placementKey: types.NamespacedName{
-				Name: placementName,
-			},
-			existingSnapshots: []client.Object{
-				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-placement-0",
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "true",
-						},
-					},
-				},
-				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-placement-1",
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "false",
-						},
-					},
-				},
-			},
-			expectedSnapshots: 1,
-		},
-		{
-			name: "fetch latest cluster scoped policy snapshots - mixed setup",
-			placementKey: types.NamespacedName{
-				Name: placementName,
-			},
-			existingSnapshots: []client.Object{
-				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-placement-0",
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "true",
-						},
-					},
-				},
-				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-placement-1",
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "false",
-						},
-					},
-				},
-				// Add namespaced snapshots to test mixed scenario
-				&fleetv1beta1.SchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-placement-0",
-						Namespace: policySnapshotNamespace,
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "true",
-						},
-					},
-				},
-			},
-			expectedSnapshots: 1, // Should only return cluster-scoped ones for cluster-scoped placement
-		},
-		{
-			name: "fetch latest namespaced policy snapshots",
-			placementKey: types.NamespacedName{
-				Name:      placementName,
-				Namespace: policySnapshotNamespace,
-			},
-			existingSnapshots: []client.Object{
-				&fleetv1beta1.SchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-placement-0",
-						Namespace: policySnapshotNamespace,
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "true",
-						},
-					},
-				},
-				&fleetv1beta1.SchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-placement-1",
-						Namespace: policySnapshotNamespace,
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "false",
-						},
-					},
-				},
-			},
-			expectedSnapshots: 1,
-		},
-		{
-			name: "fetch latest namespaced policy snapshots - mixed setup",
-			placementKey: types.NamespacedName{
-				Name:      placementName,
-				Namespace: policySnapshotNamespace,
-			},
-			existingSnapshots: []client.Object{
-				&fleetv1beta1.SchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-placement-0",
-						Namespace: policySnapshotNamespace,
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "true",
-						},
-					},
-				},
-				&fleetv1beta1.SchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-placement-1",
-						Namespace: policySnapshotNamespace,
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "false",
-						},
-					},
-				},
-				// Add cluster-scoped snapshots to test mixed scenario
-				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-placement-0",
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "true",
-						},
-					},
-				},
-			},
-			expectedSnapshots: 1, // Should only return namespaced ones for namespaced placement
-		},
-		{
-			name: "no latest policy snapshots found",
-			placementKey: types.NamespacedName{
-				Name: placementName,
-			},
-			existingSnapshots: []client.Object{
-				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-placement-0",
-						Labels: map[string]string{
-							fleetv1beta1.PlacementTrackingLabel: placementName,
-							fleetv1beta1.IsLatestSnapshotLabel:  "false",
-						},
-					},
-				},
-			},
-			expectedSnapshots: 0,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			fakeClient := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(tc.existingSnapshots...).
-				Build()
-
-			snapshots, err := FetchLatestPolicySnapshot(ctx, fakeClient, tc.placementKey)
-			if err != nil {
-				t.Fatalf("FetchLatestPolicySnapshot() = %v, want nil", err)
-			}
-
-			if len(snapshots.GetPolicySnapshotObjs()) != tc.expectedSnapshots {
-				t.Errorf("Expected %d snapshots, got %d", tc.expectedSnapshots, len(snapshots.GetPolicySnapshotObjs()))
-			}
-		})
-	}
-}
-
 func TestListPolicySnapshots(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := fleetv1beta1.AddToScheme(scheme); err != nil {
@@ -974,12 +787,8 @@ func TestLookupLatestPolicySnapshot(t *testing.T) {
 		t.Fatalf("Failed to add to scheme: %v", err)
 	}
 
-	clusterPlacement := &fleetv1beta1.ClusterResourcePlacement{
-		ObjectMeta: metav1.ObjectMeta{Name: placementName},
-	}
-	namespacedPlacement := &fleetv1beta1.ResourcePlacement{
-		ObjectMeta: metav1.ObjectMeta{Name: placementName, Namespace: policySnapshotNamespace},
-	}
+	clusterKey := types.NamespacedName{Name: placementName}
+	namespacedKey := types.NamespacedName{Name: placementName, Namespace: policySnapshotNamespace}
 
 	clusterLatestSnapshot := func(name string) *fleetv1beta1.ClusterSchedulingPolicySnapshot {
 		return &fleetv1beta1.ClusterSchedulingPolicySnapshot{
@@ -1007,44 +816,57 @@ func TestLookupLatestPolicySnapshot(t *testing.T) {
 
 	testCases := []struct {
 		name              string
-		placement         fleetv1beta1.PlacementObj
+		placementKey      types.NamespacedName
 		existingSnapshots []client.Object
 		wantName          string
-		wantErr           bool
-		wantUnexpected    bool
+		wantErrSentinel   error // nil means a snapshot is expected; otherwise the error must wrap this sentinel.
 	}{
 		{
 			name:              "exactly one cluster-scoped latest snapshot",
-			placement:         clusterPlacement,
+			placementKey:      clusterKey,
 			existingSnapshots: []client.Object{clusterLatestSnapshot("test-placement-0")},
 			wantName:          "test-placement-0",
 		},
 		{
 			name:              "exactly one namespaced latest snapshot",
-			placement:         namespacedPlacement,
+			placementKey:      namespacedKey,
 			existingSnapshots: []client.Object{namespacedLatestSnapshot("test-placement-0")},
 			wantName:          "test-placement-0",
 		},
 		{
-			name:              "no latest snapshot returns error (not unexpected-behavior)",
-			placement:         clusterPlacement,
+			name:              "no latest snapshot returns ErrNoLatestPolicySnapshot",
+			placementKey:      clusterKey,
 			existingSnapshots: nil,
-			wantErr:           true,
-			wantUnexpected:    false,
+			wantErrSentinel:   ErrNoLatestPolicySnapshot,
 		},
 		{
-			name:      "multiple latest snapshots returns unexpected-behavior error",
-			placement: clusterPlacement,
+			name:         "only non-latest snapshots present returns ErrNoLatestPolicySnapshot",
+			placementKey: clusterKey,
+			existingSnapshots: []client.Object{
+				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-placement-0",
+						Labels: map[string]string{
+							fleetv1beta1.PlacementTrackingLabel: placementName,
+							fleetv1beta1.IsLatestSnapshotLabel:  "false",
+						},
+					},
+				},
+			},
+			wantErrSentinel: ErrNoLatestPolicySnapshot,
+		},
+		{
+			name:         "multiple latest snapshots returns ErrMultipleActivePolicySnapshots",
+			placementKey: clusterKey,
 			existingSnapshots: []client.Object{
 				clusterLatestSnapshot("test-placement-0"),
 				clusterLatestSnapshot("test-placement-1"),
 			},
-			wantErr:        true,
-			wantUnexpected: true,
+			wantErrSentinel: ErrMultipleActivePolicySnapshots,
 		},
 		{
-			name:      "ignores snapshots from other placements",
-			placement: clusterPlacement,
+			name:         "ignores snapshots from other placements",
+			placementKey: clusterKey,
 			existingSnapshots: []client.Object{
 				clusterLatestSnapshot("test-placement-0"),
 				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
@@ -1060,8 +882,8 @@ func TestLookupLatestPolicySnapshot(t *testing.T) {
 			wantName: "test-placement-0",
 		},
 		{
-			name:      "ignores non-latest snapshots",
-			placement: clusterPlacement,
+			name:         "ignores non-latest snapshots",
+			placementKey: clusterKey,
 			existingSnapshots: []client.Object{
 				clusterLatestSnapshot("test-placement-1"),
 				&fleetv1beta1.ClusterSchedulingPolicySnapshot{
@@ -1076,6 +898,24 @@ func TestLookupLatestPolicySnapshot(t *testing.T) {
 			},
 			wantName: "test-placement-1",
 		},
+		{
+			name:         "cluster-scoped lookup ignores a same-named latest namespaced snapshot",
+			placementKey: clusterKey,
+			existingSnapshots: []client.Object{
+				clusterLatestSnapshot("test-placement-0"),
+				namespacedLatestSnapshot("test-placement-0"),
+			},
+			wantName: "test-placement-0",
+		},
+		{
+			name:         "namespaced lookup ignores a same-named latest cluster snapshot",
+			placementKey: namespacedKey,
+			existingSnapshots: []client.Object{
+				namespacedLatestSnapshot("test-placement-0"),
+				clusterLatestSnapshot("test-placement-0"),
+			},
+			wantName: "test-placement-0",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1086,21 +926,18 @@ func TestLookupLatestPolicySnapshot(t *testing.T) {
 				WithObjects(tc.existingSnapshots...).
 				Build()
 
-			got, err := LookupLatestPolicySnapshot(ctx, fakeClient, tc.placement)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("LookupLatestPolicySnapshot() error = %v, wantErr %v", err, tc.wantErr)
+			got, err := LookupLatestPolicySnapshot(ctx, fakeClient, tc.placementKey)
+			if (err != nil) != (tc.wantErrSentinel != nil) {
+				t.Fatalf("LookupLatestPolicySnapshot() error = %v, wantErrSentinel %v", err, tc.wantErrSentinel)
 			}
-			if tc.wantErr {
-				if tc.wantUnexpected && !errors.Is(err, ErrUnexpectedBehavior) {
-					t.Errorf("LookupLatestPolicySnapshot() error = %v, want wrapping ErrUnexpectedBehavior", err)
-				}
-				if !tc.wantUnexpected && errors.Is(err, ErrUnexpectedBehavior) {
-					t.Errorf("LookupLatestPolicySnapshot() error = %v, did not expect ErrUnexpectedBehavior wrapping", err)
+			if tc.wantErrSentinel != nil {
+				if !errors.Is(err, tc.wantErrSentinel) {
+					t.Errorf("LookupLatestPolicySnapshot() error = %v, want wrapping %v", err, tc.wantErrSentinel)
 				}
 				return
 			}
 			if got == nil || got.GetName() != tc.wantName {
-				t.Errorf("LookupLatestPolicySnapshot() returned snapshot %v, want %s", got, tc.wantName)
+				t.Errorf("LookupLatestPolicySnapshot() returned snapshot %v, want name %q", got, tc.wantName)
 			}
 		})
 	}

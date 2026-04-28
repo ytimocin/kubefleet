@@ -223,7 +223,7 @@ var _ = Describe("Updaterun initialization tests", func() {
 			Expect(k8sClient.Create(ctx, updateRun)).To(Succeed())
 
 			By("Validating the initialization failed")
-			validateFailedInitCondition(ctx, updateRun, "got 2 active policy snapshots")
+			validateFailedInitCondition(ctx, updateRun, "multiple active policy snapshots found")
 
 			By("Deleting the second scheduling policy snapshot")
 			Expect(k8sClient.Delete(ctx, snapshot2)).Should(Succeed())

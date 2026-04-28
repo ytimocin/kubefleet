@@ -139,7 +139,7 @@ func TestChangeDetector_discoverResources(t *testing.T) {
 
 			// Track handler additions
 			testHandler := cache.ResourceEventHandlerFuncs{
-				AddFunc: func(obj interface{}) {},
+				AddFunc: func(obj any) {},
 			}
 
 			// Create ChangeDetector with the interface type
@@ -196,7 +196,7 @@ func TestChangeDetector_dynamicResourceFilter(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		obj               interface{}
+		obj               any
 		skippedNamespaces map[string]bool
 		want              bool
 	}{
@@ -273,6 +273,63 @@ func TestChangeDetector_dynamicResourceFilter(t *testing.T) {
 			got := detector.dynamicResourceFilter(tt.obj)
 			if got != tt.want {
 				t.Errorf("dynamicResourceFilter(%v) = %v, want %v", tt.obj, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewFilteringHandlerOnAllEvents verifies that the helper composes a
+// FilteringResourceEventHandler that gates each event type on the supplied filter:
+// callbacks fire only when the filter accepts the object.
+func TestNewFilteringHandlerOnAllEvents(t *testing.T) {
+	cm := func(name string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	}
+
+	tests := []struct {
+		name    string
+		event   string // "add", "update", or "delete"
+		obj     *corev1.ConfigMap
+		wantHit bool
+	}{
+		{name: "add fires when filter accepts", event: "add", obj: cm("keep"), wantHit: true},
+		{name: "add skipped when filter rejects", event: "add", obj: cm("drop"), wantHit: false},
+		{name: "update fires when filter accepts", event: "update", obj: cm("keep"), wantHit: true},
+		{name: "update skipped when filter rejects", event: "update", obj: cm("drop"), wantHit: false},
+		{name: "delete fires when filter accepts", event: "delete", obj: cm("keep"), wantHit: true},
+		{name: "delete skipped when filter rejects", event: "delete", obj: cm("drop"), wantHit: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var addCalls, updateCalls, deleteCalls int
+			filter := func(obj any) bool {
+				c, ok := obj.(*corev1.ConfigMap)
+				return ok && c.Name == "keep"
+			}
+			handler := newFilteringHandlerOnAllEvents(filter,
+				func(_ any) { addCalls++ },
+				func(_, _ any) { updateCalls++ },
+				func(_ any) { deleteCalls++ },
+			)
+
+			if _, ok := handler.(*cache.FilteringResourceEventHandler); !ok {
+				t.Fatalf("newFilteringHandlerOnAllEvents() = %T, want *cache.FilteringResourceEventHandler", handler)
+			}
+
+			switch tt.event {
+			case "add":
+				handler.OnAdd(tt.obj, false)
+			case "update":
+				handler.OnUpdate(tt.obj, tt.obj)
+			case "delete":
+				handler.OnDelete(tt.obj)
+			}
+
+			gotHit := addCalls+updateCalls+deleteCalls == 1
+			if gotHit != tt.wantHit {
+				t.Errorf("newFilteringHandlerOnAllEvents() %s callback fired = %v, want %v (counts add=%d update=%d delete=%d)",
+					tt.event, gotHit, tt.wantHit, addCalls, updateCalls, deleteCalls)
 			}
 		})
 	}

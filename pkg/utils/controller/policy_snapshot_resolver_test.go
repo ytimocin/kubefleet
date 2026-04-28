@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	fleetv1beta1 "github.com/kubefleet-dev/kubefleet/apis/placement/v1beta1"
 )
@@ -940,5 +942,37 @@ func TestLookupLatestPolicySnapshot(t *testing.T) {
 				t.Errorf("LookupLatestPolicySnapshot() returned snapshot %v, want name %q", got, tc.wantName)
 			}
 		})
+	}
+}
+
+// TestLookupLatestPolicySnapshot_ListError covers the API-error path: when the underlying List
+// call fails with an error that isUnexpectedCacheError treats as unexpected (i.e. not a
+// *apierrors.StatusError, context.Canceled, or context.DeadlineExceeded), NewAPIServerError
+// promotes it to ErrUnexpectedBehavior.
+func TestLookupLatestPolicySnapshot_ListError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := fleetv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("Failed to add to scheme: %v", err)
+	}
+
+	listErr := fmt.Errorf("simulated cache failure")
+	fakeClient := interceptor.NewClient(
+		fake.NewClientBuilder().WithScheme(scheme).Build(),
+		interceptor.Funcs{
+			List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+				return listErr
+			},
+		},
+	)
+
+	got, err := LookupLatestPolicySnapshot(context.Background(), fakeClient, types.NamespacedName{Name: placementName})
+	if err == nil {
+		t.Fatalf("LookupLatestPolicySnapshot() = %v, nil; want non-nil error", got)
+	}
+	if got != nil {
+		t.Errorf("LookupLatestPolicySnapshot() returned snapshot %v, want nil", got)
+	}
+	if !errors.Is(err, ErrUnexpectedBehavior) {
+		t.Errorf("LookupLatestPolicySnapshot() error = %v, want wrapping ErrUnexpectedBehavior", err)
 	}
 }

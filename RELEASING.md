@@ -13,6 +13,7 @@ supported are covered in [VERSIONING.md](VERSIONING.md) and
 | Agent images (`hub-agent`, `member-agent`, `refresh-token`) | `ghcr.io/kubefleet-dev/kubefleet/<image>` | `:v0.4.0` and `:0.4.0` | `:v0.4.0-rc.1` only |
 | Image signatures + SPDX SBOMs | Alongside each image in the registry | Yes | Yes |
 | CRD bundle (`kubefleet-crds-<tag>.tgz`, `.sha256`, `.sha256.bundle`) | GitHub Release asset | Yes | Yes |
+| `kubectl-fleet` archives (`kubectl-fleet-<os>-<arch>.tar.gz`/`.zip` + `checksums.txt`) — checksummed, not signed | GitHub Release asset | Yes | Yes |
 | Helm charts (OCI) | `oci://ghcr.io/kubefleet-dev/kubefleet/charts/<chart>` | Yes | No |
 | Helm charts (index) | `https://kubefleet-dev.github.io/kubefleet/charts` | Yes | No |
 | GitHub Release | Releases page | Published | Published, flagged pre-release |
@@ -67,7 +68,8 @@ setup                       validate the tag; derive registry, version, prerelea
       ├── publish-images     multi-arch buildx push, then verify both platforms
       │    ├── publish-charts-oci     stable only; helm push + appVersion check
       │    └── publish-charts-pages   stable only; rewrite the gh-pages index
-      └── publish-crds       package the CRDs, upload the bundle to the draft
+      ├── publish-crds       package the CRDs, upload the bundle to the draft
+      └── publish-cli        cross-compile kubectl-fleet, upload the archives to the draft
 
 publish-release              needs ALL of the jobs above; verifies the release's
                              assets, then flips the draft to published
@@ -179,9 +181,9 @@ the repository.
 ## Recovering from a failed run
 
 The normal recovery is **Re-run failed jobs** on the workflow run. Jobs that
-already succeeded are not re-run, and every job is safe to repeat: the CRD
-upload uses `--clobber`, `create-draft-release` reuses the draft it created the
-first time, and image pushes rewrite the same tags.
+already succeeded are not re-run, and every job is safe to repeat: the CRD and
+CLI uploads use `--clobber`, `create-draft-release` reuses the draft it created
+the first time, and image pushes rewrite the same tags.
 
 Re-running `publish-images` rebuilds from source rather than reproducing the
 earlier build byte-for-byte, so the tag ends up pointing at a *new* digest. That
@@ -193,10 +195,10 @@ is harmless while the release is still a draft — nothing has been announced ye
 | `setup` | Nothing | The tag is malformed. Delete it, fix, re-tag. |
 | `create-draft-release` | Nothing | Two causes. If it failed on **Check this ref can sign a release**, the run was started from a ref a release cannot sign under — re-dispatch from `main`, a `release-X.Y` branch, or the tag itself; nothing was published, so there is nothing to clean up. If it refused because the release is already published, see [Re-releasing an existing tag](#re-releasing-an-existing-tag). |
 | `publish-images` | Any images pushed before the failure (`make push` builds hub-agent, member-agent, then refresh-token in order) | Fix, then re-run failed jobs. |
-| `publish-crds` | Possibly the images — it runs in parallel with `publish-images`, not after it | Fix, then re-run failed jobs. |
+| `publish-crds` / `publish-cli` | Possibly the images — they run in parallel with `publish-images`, not after it | Fix, then re-run failed jobs. |
 | Either signing step | Whatever that job published before signing | Usually a Sigstore or registry transient rather than a code fault — re-run failed jobs first. A signature that will not verify fails the job by design, so nothing unverifiable ships. |
-| `publish-charts-oci` / `publish-charts-pages` | Images; CRD bundle is attached to the still-hidden draft | Fix, then re-run failed jobs. The release stays a draft until the charts land. |
-| `publish-release` | Images, charts | The asset check found the draft incomplete or its bundle failed its own checksum. Re-run `publish-crds` rather than hand-uploading: it regenerates the tarball, checksum, and signature together, and a hand-replaced checksum would no longer match its signature. |
+| `publish-charts-oci` / `publish-charts-pages` | Images; CRD bundle and CLI archives are attached to the still-hidden draft | Fix, then re-run failed jobs. The release stays a draft until the charts land. |
+| `publish-release` | Images, charts | The asset check found the draft incomplete, or an asset failed its own checksum. Re-run `publish-crds` (or `publish-cli`) rather than hand-uploading: each regenerates its artifacts and checksums together, and a hand-replaced checksum would no longer match its signature. |
 
 `publish-charts-pages` serializes across *all* releases, because the action it
 uses rewrites the whole `gh-pages` branch. GitHub keeps at most one pending
@@ -220,8 +222,8 @@ with a different build.
   delete the GitHub Release and the tag, then cut the *next* tag rather than
   reusing the old one — `-rc.N+1` for a release candidate, or the next patch
   version for a stable release. Container tags that have been pulled are not
-  safely reusable, and the CRD bundle checksum users recorded would change under
-  them. Because the bad images stay pullable under their original tag (see
+  safely reusable, and the CRD bundle and CLI checksums users recorded would
+  change under them. Because the bad images stay pullable under their original tag (see
   [Abandoning a release](#abandoning-a-release)), also delete those package
   versions if the build was actually broken rather than merely superseded.
 - **If only one artifact is missing** (for example a chart publish that was
@@ -273,8 +275,9 @@ cleanly reversible. Soak on release candidates, which publish neither chart.
   then on, fixes land on `main` and are backported with the `cherry-pick/0.Y`
   labels described in
   [CONTRIBUTING.md](CONTRIBUTING.md#backporting-to-release-branches).
-- Verify the published release page lists the CRD bundle and its checksum, and
-  that the generated notes look right — they come from the `release-note/*`
+- Verify the published release page lists the CRD bundle and its checksum, the
+  five `kubectl-fleet-*` archives and `checksums.txt`, and that the generated
+  notes look right — they come from the `release-note/*`
   labels on the PRs in the release.
 - **One-time, at the first stable release cut by this workflow:** the `gh-pages`
   chart index carries stale `hub-agent 0.1.0` and `member-agent 0.1.0` entries

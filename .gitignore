@@ -52,3 +52,6 @@ _crd-package/
 .squad-workstream
 .squad/.cache/
 _image-metadata/
+
+# kubectl-fleet release archives
+_cli-package/

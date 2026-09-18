@@ -21,6 +21,16 @@ entries:
     urls:
     - https://ytimocin.github.io/kubefleet/charts/hub-agent-0.98.0.tgz
     version: 0.98.0
+  - apiVersion: v2
+    appVersion: v0.97.0
+    created: "2026-09-18T19:16:34.656421043Z"
+    description: A Helm chart for hub agent
+    digest: 506a147a17648e9bc1318b6c355843d326f90c440e58c4554b217cb5f3dbe28a
+    name: hub-agent
+    type: application
+    urls:
+    - https://ytimocin.github.io/kubefleet/charts/hub-agent-0.97.0.tgz
+    version: 0.97.0
   member-agent:
   - apiVersion: v2
     appVersion: v0.99.0
@@ -42,4 +52,14 @@ entries:
     urls:
     - https://ytimocin.github.io/kubefleet/charts/member-agent-0.98.0.tgz
     version: 0.98.0
-generated: "2026-09-02T20:53:37.806089304Z"
+  - apiVersion: v2
+    appVersion: v0.97.0
+    created: "2026-09-18T19:16:34.657027358Z"
+    description: Helm chart for member agent.
+    digest: f498ea7fe690b1edac7e2b3c7c3e003a464f9da60b7134455784c1ddda94fa69
+    name: member-agent
+    type: application
+    urls:
+    - https://ytimocin.github.io/kubefleet/charts/member-agent-0.97.0.tgz
+    version: 0.97.0
+generated: "2026-09-18T19:16:34.649955586Z"
